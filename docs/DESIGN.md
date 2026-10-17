@@ -252,7 +252,40 @@ Text-only play risks fatigue, so small ASCII or GUI visualisations (maps, bars) 
 3. **Slice 3:** happiness consequences, corruption.
 4. **Later:** enemy factions, win paths, meta-progression.
 
-## Ideas not built yet
+## Ideas under consideration
+
+Work in progress. Nothing here is decided. Each entry records the problem, the options discussed and any current leaning, so a later session can pick it up. When an entry is settled, move it into "Planned game design" and mark it **Decided**; if it is dropped, say why instead of deleting it.
+
+### Why the player must keep expanding
+
+**Problem.** Once the colony is balanced (power, air, food, beds and happiness all in the green), nothing forces the player to build more. The current economy is also endlessly self-sustaining: materials arrive at 1 + 0.5 per colonist every tick forever. A stable colony can simply sit still, which undercuts the roguelike run structure and the three acts.
+
+**Options discussed**
+
+| Option | Kind | How it pushes | Concerns |
+|---|---|---|---|
+| Waves that outscale a static colony | Push | Threat strength rises with time, so a colony that stops growing eventually loses. Already planned (see Threats and waves). | A pure stick; works best when other options feel like opportunities. |
+| Finite local resources | Push | Materials come from deposits near the hub that run dry, so the colony needs new sites. Fits the radius rules, since wire and pipe reach is limited, so spreading out means outposts that need their own power and air. | Needs a map with somewhere to expand to (see open questions). Needs deposits to be visible so the player can plan. |
+| Upkeep and decay | Push | Rooms wear out and cost materials to repair, so income has to keep rising just to stay level. | Easily reads as a tax if overdone. |
+| Arrivals keep coming and want more | Pull | Colonists already arrive when there are free beds and happiness is at least 50. Arrival pace could rise over time, or later arrivals could need specific roles or rooms. | Needs a reason the player cannot just refuse arrivals. |
+| Goals and unlocks | Pull | The two win paths (Ascension, Conquest) and meta-progression unlocks only come from growth, so staying put means never winning or unlocking anything. | Needs the win paths to exist first. |
+
+**Current leaning (Proposed).** Combine finite local resources with escalating waves, and use the win paths as the reason to care. Finite deposits give a specific, readable reason to expand ("the nearby ore is running out") instead of a vague timer. Waves keep the clock honest. Avoid leaning on upkeep alone.
+
+**Guardrails**
+
+- Avoid an expand-or-die treadmill with no breathing room. Early expansion should be optional, matching the calm opening in the first-run plan, and only become compulsory around Act 2.
+- Pressure should come from information the player can see and plan around (deposit sizes, wave telegraphs), not from surprise losses.
+- Cozy-leaning players should still have a choice of how to expand (more homes and gardens versus more defence), in line with the "resources and threats pull in opposite directions" pillar.
+
+**Open questions**
+
+- **Where does the colony expand to?** The grid is a fixed 16 by 10. Options: reveal more map over time, or separate outpost grids linked by a command (something like `link`). This decision shapes everything else here, so settle it first.
+- Are deposits depleted by use, by time, or both? Can they be surveyed or prospected with a command?
+- Does a second site need its own hub, or just a reactor and a connection back?
+- How do the status commands show a running-out resource? (`status materials` already forecasts affordability, and could forecast depletion.)
+
+## Small tasks not built yet
 
 - Custom scripts (from the README) — see "Scripting" above for the direction; no detailed design.
 - Rename the in-game title from "Station Shell" to Space Colony.
