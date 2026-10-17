@@ -1,12 +1,12 @@
 import './style.css';
-import { BUILDABLE, COLS, ROWS, newState, step, coord, type LogLine, type RoomType } from './sim';
-import { execute, suggest } from './commands';
+import { COLS, ROWS, newState, step, coord, type LogLine } from './sim';
+import { buildPreview, execute, linkPreview, suggest, type ViewAction } from './commands';
 import { Renderer, type View } from './render';
 
 const BASE_TICK_MS = 1000;
 
 const state = newState();
-const view: View = { selected: null, hover: null, focus: null, ghost: null };
+const view: View = { selected: null, hover: null, focus: null, ghost: null, highlight: null, linkGhost: null };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const out = $('out');
@@ -27,6 +27,12 @@ function print(lines: LogLine[], forceScroll = false): void {
     const el = document.createElement('div');
     el.className = `line ${l.kind}`;
     el.textContent = l.text;
+    if (l.tag) {
+      const tag = document.createElement('span');
+      tag.className = `line ${l.tag.kind}`;
+      tag.textContent = l.tag.text;
+      el.appendChild(tag);
+    }
     out.appendChild(el);
   }
   if (follow) out.scrollTop = out.scrollHeight;
@@ -72,7 +78,13 @@ input.addEventListener('keydown', (e) => {
       out.scrollTop = out.scrollHeight;
       if (res.select !== undefined) view.selected = res.select;
       if (res.focus !== undefined) view.focus = res.focus;
+      if (res.view) applyView(res.view);
     }
+    histIdx = history.length;
+    updateHint();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    input.value = '';
     histIdx = history.length;
     updateHint();
   } else if (e.key === 'ArrowUp') {
@@ -97,6 +109,13 @@ input.addEventListener('keydown', (e) => {
 input.addEventListener('input', updateHint);
 document.addEventListener('click', () => { if (!getSelection()?.toString()) input.focus(); });
 
+function applyView(a: ViewAction): void {
+  if (a.reset) renderer.resetView();
+  if (a.zoom) renderer.zoomCenter(a.zoom);
+  if (a.pan) renderer.panCells(a.pan.x, a.pan.y);
+  if (a.highlight !== undefined) view.highlight = a.highlight;
+}
+
 function commonPrefix(xs: string[]): string {
   let p = xs[0];
   for (const x of xs) while (!x.startsWith(p)) p = p.slice(0, -1);
@@ -108,14 +127,46 @@ function updateHint(): void {
   // Preview what Shift+Enter would type, when the cursor is somewhere and it would change the line.
   const next = view.selected ? filledLine(view.selected) : null;
   fillHint.textContent = next && next !== input.value.trim().toLowerCase() ? `⇧↵  ${next}` : ' ';
-  const m = /^\s*build\s+(\w+)/i.exec(input.value);
-  view.ghost = m && (BUILDABLE as string[]).includes(m[1].toLowerCase()) ? (m[1].toLowerCase() as RoomType) : null;
+  view.ghost = buildPreview(input.value);
+  view.linkGhost = linkPreview(state, input.value);
 }
 
 // --- map interaction: clicks move the cursor; Shift+Enter types it into the command ---
-canvas.addEventListener('mousemove', (e) => { view.hover = renderer.cellAt(e.clientX, e.clientY); });
+// Drag to pan, wheel to zoom about the pointer, double-click to reset the view.
+const DRAG_THRESHOLD = 4;
+let drag: { x: number; y: number; moved: boolean } | null = null;
+let justDragged = false;
+
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 0) drag = { x: e.clientX, y: e.clientY, moved: false };
+});
+window.addEventListener('mousemove', (e) => {
+  if (!drag) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < DRAG_THRESHOLD) return;
+  drag.moved = true;
+  canvas.classList.add('panning');
+  renderer.panBy(e.clientX - drag.x, e.clientY - drag.y);
+  drag.x = e.clientX;
+  drag.y = e.clientY;
+});
+window.addEventListener('mouseup', () => {
+  // The click event fires right after mouseup; flag it so a pan does not also move the cursor.
+  justDragged = !!drag?.moved;
+  drag = null;
+  canvas.classList.remove('panning');
+  if (justDragged) setTimeout(() => { justDragged = false; }, 0);
+});
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  renderer.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015));
+  view.hover = renderer.cellAt(e.clientX, e.clientY);
+}, { passive: false });
+canvas.addEventListener('dblclick', () => renderer.resetView());
+
+canvas.addEventListener('mousemove', (e) => { if (!drag?.moved) view.hover = renderer.cellAt(e.clientX, e.clientY); });
 canvas.addEventListener('mouseleave', () => { view.hover = null; });
 canvas.addEventListener('click', (e) => {
+  if (justDragged) return;
   const c = renderer.cellAt(e.clientX, e.clientY);
   if (!c) return;
   // Clicking only moves the cursor; Shift+Enter is what types the cell into the command.

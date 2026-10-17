@@ -1,7 +1,7 @@
 export const COLS = 16;
 export const ROWS = 10;
 
-export type RoomType = 'hub' | 'reactor' | 'oxygen' | 'garden' | 'quarters' | 'rec';
+export type RoomType = 'hub' | 'reactor' | 'oxygen' | 'garden' | 'quarters' | 'lounge';
 
 export interface RoomDef {
   label: string;
@@ -20,22 +20,22 @@ export const ROOM_DEFS: Record<RoomType, RoomDef> = {
   oxygen: { label: 'Oxygen Plant', color: '#5ad1e6', cost: 30, draw: 3, radius: 4, desc: 'Needs power. Use "pipe" to send air to up to 4 quarters within its radius.' },
   garden: { label: 'Hydroponics', color: '#7ad97a', cost: 25, draw: 2, radius: 0, desc: 'Needs power. Grows 2 food per tick.' },
   quarters: { label: 'Quarters', color: '#c19cf5', cost: 20, draw: 1, radius: 0, desc: 'Needs a power wire and an air pipe. Houses 2 colonists, and draws new arrivals.' },
-  rec: { label: 'Rec Room', color: '#f58cb4', cost: 30, draw: 2, radius: 3, desc: 'Needs power. Quarters within its radius get a happiness boost.' },
+  lounge: { label: 'Lounge', color: '#f58cb4', cost: 30, draw: 2, radius: 3, desc: 'Needs power. Quarters within its radius get a happiness boost.' },
 };
 
-export const BUILDABLE: RoomType[] = ['reactor', 'oxygen', 'garden', 'quarters', 'rec'];
+export const BUILDABLE: RoomType[] = ['reactor', 'oxygen', 'garden', 'quarters', 'lounge'];
 
 export const REACTOR_OUTPUT = 12;
 export const OXYGEN_PIPES = 4;
-const OXYGEN_OUTPUT = 3;
-const GARDEN_OUTPUT = 2;
-const COLONIST_O2 = 0.5;
-const COLONIST_FOOD = 0.3;
-const MATERIAL_PER_COLONIST = 0.5;
-const STOCK_CAP = 100;
-const HUB_CAPACITY = 4;
-const QUARTERS_CAPACITY = 2;
-const ARRIVAL_TICKS = 15;
+export const OXYGEN_OUTPUT = 3;
+export const GARDEN_OUTPUT = 2;
+export const COLONIST_O2 = 0.5;
+export const COLONIST_FOOD = 0.3;
+export const MATERIAL_PER_COLONIST = 0.5;
+export const STOCK_CAP = 100;
+export const HUB_CAPACITY = 4;
+export const QUARTERS_CAPACITY = 2;
+export const ARRIVAL_TICKS = 15;
 const NAMES = ['Abara', 'Bishop', 'Castellan', 'Dunmore', 'Esperanza', 'Fenwick', 'Gallo', 'Hartigan', 'Ilves', 'Jovanovic', 'Kaito', 'Lumley', 'Moreau', 'Nakamura', 'Orlov', 'Pemberton', 'Quill', 'Rasmussen', 'Soto', 'Thackeray', 'Umar', 'Vance', 'Wren', 'Xiang', 'Yilmaz', 'Zeller'];
 const ROLES = ['Engineer', 'Medic', 'Botanist', 'Pilot', 'Cook', 'Technician', 'Mechanic', 'Scientist'];
 
@@ -52,8 +52,8 @@ export interface Room {
   powered: boolean;
   /** Quarters/hub only: air is actually reaching the room. */
   breathable: boolean;
-  /** Quarters/hub only: number of powered rec rooms in range. */
-  recCount: number;
+  /** Quarters/hub only: number of powered lounges in range. */
+  loungeCount: number;
 }
 
 export interface Colonist {
@@ -66,10 +66,28 @@ export type LogKind = 'info' | 'ok' | 'warn' | 'err';
 export interface LogLine {
   kind: LogKind;
   text: string;
+  /** Optional coloured suffix shown after the text, e.g. a status like [OPERATIONAL]. */
+  tag?: { text: string; kind: LogKind };
 }
+
+/** One tick's worth of the totals the `status` graphs plot. */
+export interface Sample {
+  oxygen: number;
+  food: number;
+  materials: number;
+  colonists: number;
+  happiness: number;
+  powerSupply: number;
+  powerDemand: number;
+}
+
+/** How many ticks of history are kept for `status` graphs. */
+export const HISTORY_CAP = 300;
 
 export interface State {
   tick: number;
+  /** Oldest first; the last entry is the current tick. */
+  history: Sample[];
   speed: number;
   rooms: Room[];
   nextId: number;
@@ -105,6 +123,7 @@ export function newState(): State {
   const cy = Math.floor(ROWS / 2);
   const s: State = {
     tick: 0,
+    history: [],
     speed: 1,
     rooms: [],
     nextId: 1,
@@ -128,11 +147,17 @@ export function newState(): State {
   const plant = addRoom(s, 'oxygen', cx + 1, cy);
   plant.powerFrom = reactor.id;
   recompute(s);
+  record(s);
   return s;
 }
 
+function record(s: State): void {
+  s.history.push({ oxygen: s.oxygen, food: s.food, materials: s.materials, colonists: s.crew.length, happiness: s.happiness, powerSupply: s.powerSupply, powerDemand: s.powerDemand });
+  if (s.history.length > HISTORY_CAP) s.history.shift();
+}
+
 export function addRoom(s: State, type: RoomType, x: number, y: number): Room {
-  const r: Room = { id: s.nextId++, type, x, y, powerFrom: null, airFrom: null, powered: type === 'reactor' || type === 'hub', breathable: false, recCount: 0 };
+  const r: Room = { id: s.nextId++, type, x, y, powerFrom: null, airFrom: null, powered: type === 'reactor' || type === 'hub', breathable: false, loungeCount: 0 };
   s.rooms.push(r);
   return r;
 }
@@ -169,7 +194,7 @@ export function recompute(s: State): void {
   s.powerDemand = demand;
 
   const pipes = new Map<number, number>();
-  const recs = s.rooms.filter((r) => r.type === 'rec' && r.powered);
+  const lounges = s.rooms.filter((r) => r.type === 'lounge' && r.powered);
   for (const r of s.rooms) {
     if (r.type !== 'quarters' && r.type !== 'hub') continue;
     if (r.type === 'hub') {
@@ -183,11 +208,11 @@ export function recompute(s: State): void {
         r.breathable = true;
       }
     }
-    r.recCount = recs.filter((f) => dist(r, f) <= ROOM_DEFS.rec.radius).length;
+    r.loungeCount = lounges.filter((f) => dist(r, f) <= ROOM_DEFS.lounge.radius).length;
   }
 }
 
-function housingSlots(s: State): Room[] {
+export function housingSlots(s: State): Room[] {
   const slots: Room[] = [];
   for (const r of s.rooms) {
     if (r.type === 'hub') for (let i = 0; i < HUB_CAPACITY; i++) slots.push(r);
@@ -247,7 +272,7 @@ export function step(s: State): LogLine[] {
   });
   const housedSlots = slots.slice(0, s.crew.length);
 
-  const funPerColonist = housedSlots.map((r) => clamp(0.15 + r.recCount * 0.45, 0, 1));
+  const funPerColonist = housedSlots.map((r) => clamp(0.15 + r.loungeCount * 0.45, 0, 1));
   s.mood = {
     air: clamp(s.oxygen / 30, 0, 1),
     food: clamp(s.food / 30, 0, 1),
@@ -256,6 +281,7 @@ export function step(s: State): LogLine[] {
   };
   const target = 100 * (s.mood.air + s.mood.food + s.mood.housing + s.mood.fun) / 4;
   s.happiness += (target - s.happiness) * 0.1;
+  record(s);
   return log;
 }
 

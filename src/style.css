@@ -25,6 +25,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 
 #view { position: relative; min-height: 0; background: radial-gradient(ellipse at center, #10162c 0%, var(--bg) 70%); }
 #map { position: absolute; inset: 0; cursor: crosshair; }
+#map.panning { cursor: grabbing; }
 
 #term { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-top: 2px solid var(--accent); padding: 8px 14px 10px; font-size: 14px; }
 #out { flex: 1; overflow-y: auto; white-space: pre-wrap; line-height: 1.45; }

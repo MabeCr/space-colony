@@ -70,7 +70,7 @@ Valid values for `build <type>`. The Command Hub (`hub`) exists from the start a
 | `oxygen` | Oxygen Plant | 30 | 3 | 4 | Needs power. Makes 3 oxygen per tick. Pipe it to up to 4 quarters within its radius. |
 | `garden` | Hydroponics | 25 | 2 | — | Needs power. Makes 2 food per tick. |
 | `quarters` | Quarters | 20 | 1 | — | Needs a power wire **and** an air pipe. Houses 2 colonists and attracts new arrivals. |
-| `rec` | Rec Room | 30 | 2 | 3 | Needs power. Quarters within its radius get a happiness boost. |
+| `lounge` | Lounge | 30 | 2 | 3 | Needs power. Quarters within its radius get a happiness boost. |
 
 Other limits used by the commands:
 
@@ -86,7 +86,7 @@ Other limits used by the commands:
 | Command | Usage | Summary |
 |---|---|---|
 | [`help`](#help) | `help [command]` | List commands, or explain one. |
-| [`status`](#status) | `status` | Resource and happiness overview. |
+| [`status`](#status) | `status [oxygen | food | materials | colonists | happiness | power | alerts] [-time <ticks>]` | Colony overview, an alert list, or a graph and diagnosis of one category. |
 | [`build`](#build) | `build <type> -location <cell>` | Construct a room. |
 | [`wire`](#wire) | `wire -from <reactor> -to <room>` | Run a power line from a reactor to a room. |
 | [`unwire`](#unwire) | `unwire -to <room>` | Cut the power line to a room. |
@@ -97,6 +97,7 @@ Other limits used by the commands:
 | [`rooms`](#rooms) | `rooms` | List every room and whether it is working. |
 | [`crew`](#crew) | `crew` | List colonists and who has a bunk. |
 | [`speed`](#speed) | `speed <1 \| 1/2 \| 1/4>` | Slow time down (no pause). |
+| [`view`](#view) | `view zoom <in\|out> [steps]`, `view pan <dir> [cells]`, `view <room type>`, `view reset` | Zoom, pan or highlight the map. |
 | [`clear`](#clear) | `clear` | Clear the terminal. |
 
 ---
@@ -129,15 +130,50 @@ help build
 
 ```
 status
+status <oxygen | food | materials | colonists | happiness | power> [-time <ticks>]
+status alerts
 ```
 
-No parameters. Prints a colony-wide overview:
+| Parameter | Form | Required | Description |
+|---|---|---|---|
+| `category` | positional | no | One of `oxygen`, `food`, `materials`, `colonists`, `happiness`, `power`, or `alerts`. Omit for the colony-wide overview. |
+| `-time <ticks>` | flag (no aliases; `-t` means `-to`) | no | How many ticks of history to graph, a whole number from `2` to `300`. Default `30`. Only used with a graphed category (not `alerts`). |
+
+**`status` alone** prints a colony-wide overview:
 
 - **Power** — `demand wanted / supply produced`
 - **Oxygen**, **Food** — current stock (0–100)
 - **Materials** — current stock, rounded down
 - **Population** — number of colonists
-- **Happiness** — score plus the four components as percentages: air, food, housing, fun
+- **Happiness** — the score. The air, food, housing and fun breakdown is in `status happiness`.
+
+Each line ends with a trend arrow comparing now to 10 ticks ago: `▲` rising, `▼` falling, `–` steady (a change of under 0.05 per tick). The power arrow tracks power *wanted*. The arrows are neutral: `▲` on power wanted is not "good" or "bad" by itself.
+
+**`status alerts`** lists everything currently wrong, or `All clear.` Checks, in order: oxygen and food (depleted, below 20, or falling with a run-out forecast), power wanted above power produced, every room with a `rooms` problem flag (`NOT WIRED`, `NO POWER`, `NOT PIPED`, `NO AIR`), colonists with no bunk (by name), and happiness below 50 (no new arrivals).
+
+**`status <category>`** prints a column graph of that total over the last `-time` ticks (oldest on the left, `now` on the right, about 60 columns wide; longer windows are averaged down), a one-line trend summary (current value, rising/falling/steady, change over the window, change per tick, low and high), and diagnostics. Oxygen, food and happiness are graphed from 0 to 100; materials and colonists from 0 to the highest value in the window. If fewer ticks of history exist than requested, it graphs what there is and says so. A tick is one second at 1x.
+
+| Category | Diagnostics shown |
+|---|---|
+| `oxygen` | Oxygen made per tick (powered plants x 3), used per tick (colonists x 0.5), net rate, and a forecast ("runs out in about N ticks", "fills in about N ticks", "holding steady", "full"). Warns about plants that are offline, and suggests another plant if the net is negative. |
+| `food` | The same for hydroponics (2 each) and colonists (0.3 each). |
+| `materials` | Income per tick (1 + 0.5 per colonist), and for each buildable room type its cost and whether it is affordable now or in how many ticks. |
+| `colonists` | Total beds (hub 4 + working quarters x 2) and how many are free, housed versus no bunk, quarters that are not counted because they lack power or air, and the state of the next arrival: blocked (no free beds), paused (happiness below 50), or due in N ticks. |
+| `power` | Graphs power wanted (scaled up to the highest wanted or produced in the window). Then: wanted versus produced and the spare or shortfall, each reactor's load, spare capacity and number of rooms wired to it, and each power-using room that is not wired, out of range of its reactor, or on an overloaded reactor. Suggests another reactor when short. |
+| `happiness` | Where it is heading (the target the score moves 10% toward each tick), a bar for each of air, food, housing and fun, the weakest component with a suggestion, and a warning if it is below 50 (no arrivals). |
+
+Errors: `Unknown status option "<text>". Options: ...`, `-time must be a whole number of ticks from 2 to 300.`, or `Not enough history yet. Try again in a moment.` (before the first tick).
+
+```
+status
+status alerts
+status oxygen
+status power
+status food -time 60
+status happiness -time 10
+```
+
+History is kept for the last 300 ticks and is not saved between sessions.
 
 ---
 
@@ -149,7 +185,7 @@ build <type> -location <cell>
 
 | Parameter | Form | Aliases | Required | Description |
 |---|---|---|---|---|
-| `type` | positional | — | yes | One of `reactor`, `oxygen`, `garden`, `quarters`, `rec`. See [Room types](#room-types). |
+| `type` | positional | — | yes | One of `reactor`, `oxygen`, `garden`, `quarters`, `lounge`. See [Room types](#room-types). |
 | `-location <cell>` | flag | `-loc`, `-l` | yes | Cell to build on. |
 
 Behaviour:
@@ -165,7 +201,7 @@ Errors:
 | Condition | Message |
 |---|---|
 | Type or `-location` missing | `Usage: build <type> -location <cell>   (try "help build")` |
-| Type not buildable (including `hub`) | `Unknown room type "<type>". Options: reactor, oxygen, garden, quarters, rec.` |
+| Type not buildable (including `hub`) | `Unknown room type "<type>". Options: reactor, oxygen, garden, quarters, lounge.` |
 | Invalid cell | `"<text>" is not a valid cell. ...` |
 | Cell already has a room | `<cell> is already occupied.` |
 | Not enough materials | `Not enough materials: <label> costs <cost>, you have <n>.` |
@@ -197,7 +233,7 @@ Behaviour:
 - Records a power link from the reactor to the room. The room is powered only while it is within the reactor's radius (**4**) and the reactor has spare capacity.
 - If the room was already wired to a different reactor, it is **rewired** (the old link is replaced).
 - The map cursor moves to the powered room.
-- Only rooms that draw power can be wired: oxygen plant, hydroponics, quarters, rec room. Reactors and the hub cannot.
+- Only rooms that draw power can be wired: oxygen plant, hydroponics, quarters, lounge room. Reactors and the hub cannot.
 
 Errors:
 
@@ -318,7 +354,7 @@ Behaviour:
 
 Errors: `Missing -location <cell>.`, invalid cell, `Nothing is built at <cell>.`, or `You cannot demolish the Command Hub.`
 
-Refunds: reactor 20, oxygen plant 15, hydroponics 12, quarters 10, rec room 15.
+Refunds: reactor 20, oxygen plant 15, hydroponics 12, quarters 10, lounge 15.
 
 ```
 demolish -location e6
@@ -344,11 +380,11 @@ inspect reset
 Behaviour:
 
 - **On a room**, prints its label, cell and id, its description, and, where relevant:
-  - Radius (reactor, oxygen plant, rec room)
+  - Radius (reactor, oxygen plant, lounge)
   - Reactor: load (`used / 12`) and number of rooms wired to it
   - Oxygen plant: pipes in use (`n / 4`)
   - Power-using rooms: `NOT WIRED`, online (and from which reactor), or wired but unsupplied (out of range or reactor overloaded)
-  - Quarters: air status (`NOT PIPED`, flowing, or piped but unsupplied) and number of rec rooms in range
+  - Quarters: air status (`NOT PIPED`, flowing, or piped but unsupplied) and number of lounges in range
 - **On an empty cell**, prints `<cell>: empty space.` and clears the highlight.
 - Moves the map cursor to the cell and **highlights the room's connections**: its wires and pipes (in and out) and the rooms at the far ends stay lit while the rest of the map dims.
 - The highlight persists until you run another `inspect`, `inspect reset`, inspect an empty cell, or `demolish`.
@@ -379,6 +415,8 @@ No parameters. Lists every room as `<cell>  <label>`, with a bracketed problem l
 | `NO POWER` | Has a power line, but it is out of range or the reactor is overloaded. |
 | `NOT PIPED` | Quarters with no air pipe. |
 | `NO AIR` | Quarters with an air pipe that is not delivering (plant unpowered, out of range, or full). |
+
+A room with no problems ends with a green `[OPERATIONAL]` tag. This includes the Command Hub and reactors, which have nothing to connect.
 
 ---
 
@@ -414,6 +452,36 @@ Anything else prints `Usage: speed <1 | 1/2 | 1/4>`. There is **no pause** and n
 
 ---
 
+### view
+
+```
+view zoom <in|out> [steps]
+view pan <up|down|left|right> [cells]
+view <room type>
+view reset
+```
+
+Controls the map camera and highlight. None of it affects the simulation. Has no flags. The mouse does the same: wheel zooms, left-drag pans, double-click resets the camera.
+
+| Form | Parameters | Description |
+|---|---|---|
+| `view zoom in` / `view zoom out` | `steps`: optional positive number, default `1`, max `10` | Zooms about the centre of the map panel. Each step is 1.25x. Zoom is limited to 0.5x-4x of the fit-everything size. |
+| `view pan <direction>` | `direction`: `up`, `down`, `left` or `right`. `cells`: optional positive number, default `2`, max `50` | Moves the camera, so `left` shows what lies to the left. Distance is in cells at the current zoom. The map cannot be panned fully off screen. |
+| `view <room type>` | `hub`, `reactor`, `oxygen`, `garden`, `quarters` or `lounge`; plurals such as `gardens` also work | Lights up every room of that type, dims the other rooms and the links, and lists the matching cells. If none are built it prints a warning and clears any highlight. `inspect` focus takes precedence while active. |
+| `view reset` | none | Restores the fit-everything view and clears the highlight. |
+
+Errors: `Usage: view zoom <in|out> [steps]`, `Usage: view pan <up|down|left|right> [cells]`, `Steps must be a number from above 0 to 10.`, `Cells must be a number from above 0 to 50.`, `Unknown view option "<text>". ...`
+
+```
+view zoom in
+view zoom out 3
+view pan left 5
+view gardens
+view reset
+```
+
+---
+
 ### clear
 
 ```
@@ -430,12 +498,13 @@ No parameters. Clears all text in the terminal. Game state and the map highlight
 |---|---|
 | `Enter` | Run the current line. |
 | `Tab` | Autocomplete the token being typed: commands, flags (excluding ones already used), room types after `build`, speeds after `speed`, command names after `help`, `reset` after `inspect`, and valid cells after a flag. Multiple matches complete to their common prefix. |
+| `Esc` | Clear the line being typed (and the previews that come from it). Does not touch the map cursor or highlight. |
 | `Up` / `Down` | Recall previous / next command from history. |
 | `Shift` + arrow keys | Move the map cursor (starts at the map centre if nothing is selected). |
 | `Shift` + `Enter` | Type the selected cell into the current command (see below). |
 | Click on the map | Move the map cursor (does not change the typed line). |
 
-While typing, a hint line shows the usage for the current command, and a `⇧↵` preview line shows what `Shift+Enter` would produce. Typing `build <type>` also shows a radius preview on the map under the hover cell.
+While typing, a hint line shows the usage for the current command, and a `⇧↵` preview line shows what `Shift+Enter` would produce. While a `build` line has a type and `-location`, the map shows a translucent ghost room and its radius ring; a `wire` or `pipe` line with both `-from` and `-to` shows a translucent link (red and dotted if it would be refused). Until a build `-location` is valid, the ghost follows the mouse.
 
 ### Shift+Enter autofill rules
 
@@ -467,10 +536,10 @@ wire -f h6 -t j7
 pipe -f j6 -t j7
 ```
 
-Add a rec room near quarters:
+Add a lounge near quarters:
 
 ```
-build rec -l k7
+build lounge -l k7
 wire -f h6 -t k7
 ```
 

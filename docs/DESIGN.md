@@ -36,7 +36,7 @@ A real-time colony survival sim played mostly through a **command line**. The pl
 - Files in `src/`:
   - `sim.ts` — game state, room definitions, tick simulation (no DOM).
   - `commands.ts` — command parsing, execution and tab completion (no DOM).
-  - `render.ts` — canvas drawing and the `View` object (cursor, hover, focus, build ghost).
+  - `render.ts` — canvas drawing and the `View` object (cursor, hover, focus, build ghost); `buildPreview()` and `linkPreview()` in `commands.ts` parse half-typed `build` and `wire`/`pipe` lines for the previews.
   - `main.ts` — input handling, HUD, main loop, wiring it all together.
 - Branches: work happens on `dev`; `main` holds the initial commit only so far.
 
@@ -61,7 +61,7 @@ A real-time colony survival sim played mostly through a **command line**. The pl
 | Oxygen Plant | 30 | 3 | 4 | Needs power. Produces 3 oxygen per tick. Pipes to up to 4 quarters in radius. |
 | Hydroponics | 25 | 2 | — | Needs power. Produces 2 food per tick. |
 | Quarters | 20 | 1 | — | Needs a power wire and an air pipe. Houses 2. Draws new arrivals. |
-| Rec Room | 30 | 2 | 3 | Needs power. Quarters within its radius get a happiness boost. |
+| Lounge | 30 | 2 | 3 | Needs power. Quarters within its radius get a happiness boost. |
 
 Distance is straight-line (Euclidean) between cell centres. A wire is "working" only if the room is in the reactor's radius and the reactor has spare capacity; a pipe is working only if the plant is powered, the quarters are in radius, and the plant has fewer than 4 pipes in use.
 
@@ -70,7 +70,7 @@ Distance is straight-line (Euclidean) between cell centres. A wire is "working" 
 - Materials: +1 plus 0.5 per colonist each tick.
 - Oxygen and food are capped at 100. Colonists consume 0.5 oxygen and 0.3 food each per tick.
 - Colonists arrive every 15 ticks when there is a free bed **and** happiness is at least 50. Beds beyond the crew count sit empty; a colonist without a working bed is flagged "NO BUNK".
-- Happiness drifts 10% per tick toward a target, the average of four moods (each 0–1): **air** (oxygen/30), **food** (food/30), **housing** (housed/crew) and **fun** (0.15 base per housed colonist, plus 0.45 per powered rec room in range of their quarters).
+- Happiness drifts 10% per tick toward a target, the average of four moods (each 0–1): **air** (oxygen/30), **food** (food/30), **housing** (housed/crew) and **fun** (0.15 base per housed colonist, plus 0.45 per powered lounge in range of their quarters).
 - Log messages fire for things like lost power, lost air, low reserves (below 20), oxygen depleted, and new arrivals.
 
 ## Commands (implemented)
@@ -78,14 +78,18 @@ Distance is straight-line (Euclidean) between cell centres. A wire is "working" 
 Flags can be abbreviated: `-loc`/`-l` for `-location`, `-f`/`-src` for `-from`, `-t`/`-dest` for `-to`.
 
 - `help [command]` — list commands or explain one.
-- `status` — colony-wide overview (power, oxygen, food, materials, population, happiness breakdown).
+- `status` — colony-wide overview (power, oxygen, food, materials, population, happiness score).
+- `status <oxygen|food|materials|colonists|happiness> [-time <ticks>]` — a column graph of that total over the last 30 ticks (or `-time`, 2–300), a trend line, and diagnostics: production versus consumption with a run-out forecast for oxygen and food; income and what is affordable for materials; beds and the next arrival for colonists; the four moods and the weakest one for happiness. The sim keeps the last 300 ticks of `history` (a `Sample` per tick, recorded at the end of `step()`); the chart drawing is in `chart.ts` and the reports are in `commands.ts`. `-time` has no `-t` alias because `-t` already means `-to`.
+- `status power` — same graph and trend for power wanted, plus per-reactor load and spare, and every room that is unwired, out of range or on an overloaded reactor. History samples include `powerSupply` and `powerDemand` for this.
+- `status alerts` — one list of everything currently wrong: low or falling oxygen and food, power shortfall, any room `rooms` would flag, unhoused colonists, happiness below 50. `All clear.` when empty. Uses the shared `roomProblems()` helper that `rooms` also uses.
+- Plain `status` shows a trend arrow (▲ ▼ –) on each line, comparing now to 10 ticks ago (`TREND_TICKS`). The arrows are direction only, not good/bad colouring.
 - `build <type> -location <cell>` — spend materials to build. Warns if the new room still needs wiring or piping.
 - `wire -from <reactor> -to <room>` / `unwire -to <room>` — power lines.
 - `pipe -from <oxygen plant> -to <quarters>` / `unpipe -to <quarters>` — air pipes.
 - `demolish -location <cell>` — 50% refund. The hub cannot be demolished.
-- `inspect -location <cell>` — details for a room (load, pipes, power/air state, nearby rec rooms) and its radius on the map. Also highlights its connections (below).
+- `inspect -location <cell>` — details for a room (load, pipes, power/air state, nearby lounges) and its radius on the map. Also highlights its connections (below).
 - `inspect reset` — clears the connection highlight.
-- `rooms` — list every room with problem flags (NOT WIRED, NO POWER, NOT PIPED, NO AIR).
+- `rooms` — list every room with problem flags (NOT WIRED, NO POWER, NOT PIPED, NO AIR); working rooms get a green `[OPERATIONAL]` tag. This uses an optional `tag` (coloured suffix) on `LogLine`, which `main.ts` renders as a span.
 - `crew` — who is in the colony and who has a bunk.
 - `speed <1 | 1/2 | 1/4>`, `clear`.
 
@@ -93,8 +97,16 @@ Note: `status` is the colony-wide overview. `inspect` is the per-structure statu
 
 ## Console UX (implemented)
 
-- Tab completes commands, flags, room types and valid cells for the current flag. Up/Down (without Shift) recall command history. A hint line shows usage for the command being typed.
-- Typing `build <type>` shows a ghost radius ring on the map under the **mouse hover** cell, if that cell is empty and the room type has a radius. It follows the mouse only. A typed or autofilled `-location` (for example `build quarters -location g6`) does not draw anything on that cell yet.
+- Tab completes commands, flags, room types and valid cells for the current flag. Up/Down (without Shift) recall command history. Esc clears the typed line (and any build, wire or pipe preview with it) without touching the map cursor. A hint line shows usage for the command being typed.
+- **Build preview.** While a `build <type>` line is being typed (not yet submitted), the map shows a half-transparent copy of that room, plus its radius ring if the type has one (reactor, oxygen plant, lounge).
+  - The preview sits on the cell given by `-location` (or `-loc`/`-l`) as soon as it parses, so `build quarters -location g6` shows a ghost quarters on G6. Typing, Tab completion and Shift+Enter autofill all update it.
+  - Until a valid `-location` is typed, it follows the **mouse hover** cell instead.
+  - It is only drawn on an empty cell, and the type must be complete and buildable. It disappears when the line is submitted or edited into something else.
+  - The preview does not check cost, wiring or range; it only shows where and what.
+  - The ghost room is drawn at 40% opacity (`GHOST_ALPHA` in `render.ts`).
+- **Wire and pipe preview.** While a `wire` or `pipe` line has both `-from` and `-to` set to cells that hold rooms (any alias), the map draws a translucent animated link between them, amber for wires and cyan for pipes, at the same opacity as the ghost room.
+  - If the command would be refused for type or range (source is not a reactor / oxygen plant, target does not take that connection, or it is out of radius), the link is drawn red and dotted, like a broken link. Spare reactor capacity and the plant's 4-pipe limit are not checked.
+  - Nothing is drawn until both ends are set, so Shift+Enter autofill shows it as soon as the second cell is filled. `unwire` and `unpipe` have no preview.
 
 ### Connection highlight
 
@@ -113,11 +125,18 @@ Decision: clicking a cell only targets it, exactly as if the cursor had been mov
   - empty line or `inspect` → `inspect -location <cell>`
   - any other command (such as `speed` or `help`) is left unchanged
 - A **preview line** above the hint shows `⇧↵  <resulting command>` live, so the player can see exactly what Shift+Enter will do. It hides when nothing is selected or the fill would change nothing.
-- Typical flow: click a cell, type `build rec `, press Shift+Enter, press Enter.
+- Typical flow: click a cell, type `build lounge `, press Shift+Enter, press Enter.
 - Moving the keyboard cursor clears the mouse hover so the keyboard takes over. If nothing is selected yet, the first Shift+Arrow starts at the centre of the map.
 
 ## Map rendering
 
+- **Zoom and pan (mouse only, implemented).** The mouse wheel zooms about the pointer, so the cell under it stays put. Dragging with the left button pans. Double-click resets to the fit-everything view. Zoom ranges from 0.5x to 4x of the size that fits the whole grid (`MIN_ZOOM`/`MAX_ZOOM` in `render.ts`), and panning is clamped so at least a strip of the grid stays on screen. A drag must move 4px before it counts, so a plain click still just moves the cursor, and a drag never does. The view is not saved. The same controls exist as the `view` command (below).
+- **`view` command (implemented).**
+  - `view zoom <in|out> [steps]` zooms about the centre of the panel; each step is 1.25x, default 1, max 10.
+  - `view pan <up|down|left|right> [cells]` moves the camera, so `left` shows what is to the left. Default 2 cells, max 50. Cells scale with the zoom.
+  - `view reset` restores the fit-everything view and clears any highlight.
+  - `view <room type>` (also the plural, e.g. `view gardens`) lights up every room of that type and dims the other rooms and links, then lists the cells. Types: hub, reactor, oxygen, garden, quarters, lounge. Nothing built of that type clears it with a warning. The highlight stays until `view reset`. `inspect` focus takes precedence while it is active.
+  - Commands report camera and highlight changes through a `view` field on `CommandResult` (`ViewAction` in `commands.ts`); `main.ts` applies it to the renderer.
 - Wires are amber, pipes are cyan. Working links animate as moving dashes; broken ones are dotted red.
 - Rooms with missing power or air pulse red and show a bolt or droplet badge.
 - Hovered or selected rooms with a radius show a range ring and light up the in-range cells.
@@ -128,7 +147,7 @@ Everything in this section is the intended direction, agreed in design discussio
 
 ### Happiness (partly built)
 
-**Decided.** Happiness is the blend of the basics (air, food, housing) plus "fun": how many fun things there are to do. The blend and the rec room's effect are built. Later, happiness should have teeth in both directions: high happiness boosts output (the cozy reward) and low happiness causes trouble such as sabotage or colonists leaving **(Proposed)**.
+**Decided.** Happiness is the blend of the basics (air, food, housing) plus "fun": how many fun things there are to do. The blend and the lounge's effect are built. Later, happiness should have teeth in both directions: high happiness boosts output (the cozy reward) and low happiness causes trouble such as sabotage or colonists leaving **(Proposed)**.
 
 ### Colonists
 
@@ -240,4 +259,3 @@ Text-only play risks fatigue, so small ASCII or GUI visualisations (maps, bars) 
 - Optional: add `"license": "GPL-3.0-only"` to `package.json`.
 - Optional: clear the connection highlight automatically when the layout changes (`build`, `wire`, `pipe`).
 - Optional: make click-to-inspect still happen when the command line is empty.
-- Optional: preview a pending `build` on the cell named by its `-location` as it is typed (ghost room, plus radius ring where the type has one), not only under the mouse.

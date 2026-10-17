@@ -1,11 +1,26 @@
 import {
-  BUILDABLE, COLS, OXYGEN_PIPES, ROOM_DEFS, ROWS, REACTOR_OUTPUT, addRoom, coord, dist, needsPower, parseCoord, plantPipes,
+  BUILDABLE, COLONIST_FOOD, COLONIST_O2, COLS, GARDEN_OUTPUT, HISTORY_CAP, HUB_CAPACITY, MATERIAL_PER_COLONIST, OXYGEN_OUTPUT, OXYGEN_PIPES,
+  QUARTERS_CAPACITY, ROOM_DEFS, ROWS, REACTOR_OUTPUT, STOCK_CAP, addRoom, coord, dist, housingSlots, needsPower, parseCoord, plantPipes,
   reactorLoad, recompute, roomAt, roomById,
-  type LogLine, type Room, type RoomType, type State,
+  type LogLine, type Room, type RoomType, type Sample, type State,
 } from './sim';
+import { asciiChart } from './chart';
+
+/** A change to the map camera or highlight, applied by the UI after the command runs. */
+export interface ViewAction {
+  /** Multiply the zoom by this, about the centre of the map panel. */
+  zoom?: number;
+  /** Move the camera by this many cells (positive x is right, positive y is down). */
+  pan?: { x: number; y: number };
+  /** Return to the fit-everything view. */
+  reset?: boolean;
+  /** Light up every room of this type and dim the rest; null clears it. Omitted leaves it alone. */
+  highlight?: RoomType | null;
+}
 
 export interface CommandResult {
   lines: LogLine[];
+  view?: ViewAction;
   clear?: boolean;
   /** Coordinate to highlight in the map after this command. */
   select?: { x: number; y: number } | null;
@@ -56,7 +71,22 @@ function isRoomType(t: string): t is RoomType {
   return (BUILDABLE as string[]).includes(t);
 }
 
-const cellErr = (t: string) => `"${t}" is not a valid cell. Use a column A-${String.fromCharCode(64 + COLS)} and row 1-${ROWS}, like B4.`;
+const ROOM_TYPES = Object.keys(ROOM_DEFS) as RoomType[];
+const ZOOM_STEP = 1.25;
+const MAX_ZOOM_STEPS = 10;
+const DEFAULT_PAN_CELLS = 2;
+const MAX_PAN_CELLS = 50;
+/** Pan directions move the camera, so "left" shows what is to the left of the current view. */
+const PAN_DIRS: Record<string, { x: number; y: number }> = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
+
+/** Parse an optional positive amount; returns the default if absent, null if invalid or too big. */
+function amount(t: string | undefined, dflt: number, max: number): number | null {
+  if (t === undefined) return dflt;
+  const n = Number(t);
+  return Number.isFinite(n) && n > 0 && n <= max ? n : null;
+}
+
+const cellErr =(t: string) => `"${t}" is not a valid cell. Use a column A-${String.fromCharCode(64 + COLS)} and row 1-${ROWS}, like B4.`;
 
 /** Look up a room from a cell flag, returning either the room or an error result. */
 function roomFlag(s: State, a: Args, flag: string): Room | CommandResult {
@@ -70,6 +100,187 @@ function roomFlag(s: State, a: Args, flag: string): Room | CommandResult {
 }
 const isResult = (v: Room | CommandResult): v is CommandResult => 'lines' in v;
 const at = (r: Room) => `${ROOM_DEFS[r.type].label} at ${coord(r.x, r.y)}`;
+
+// --- status reports ----------------------------------------------------------------
+
+const DEFAULT_WINDOW = 30;
+/** Ticks of history the trend arrows in plain `status` look back over. */
+const TREND_TICKS = 10;
+
+/** Why a room is not working, as the short flags `rooms` prints. Empty when it is fine. */
+function roomProblems(r: Room): string[] {
+  const flags: string[] = [];
+  if (needsPower(r.type) && r.powerFrom === null) flags.push('NOT WIRED');
+  else if (needsPower(r.type) && !r.powered) flags.push('NO POWER');
+  if (r.type === 'quarters' && r.airFrom === null) flags.push('NOT PIPED');
+  else if (r.type === 'quarters' && !r.breathable) flags.push('NO AIR');
+  return flags;
+}
+
+/** Net change per tick of the oxygen or food stock at the current setup, ignoring the stock cap. */
+function stockNet(s: State, key: 'oxygen' | 'food'): number {
+  const [type, output, perHead] = key === 'oxygen' ? (['oxygen', OXYGEN_OUTPUT, COLONIST_O2] as const) : (['garden', GARDEN_OUTPUT, COLONIST_FOOD] as const);
+  return s.rooms.filter((r) => r.type === type && r.powered).length * output - s.crew.length * perHead;
+}
+
+/** ▲ / ▼ / – for how a series has moved over the last few ticks. */
+function arrow(s: State, key: keyof Sample): string {
+  const w = s.history.slice(-(TREND_TICKS + 1));
+  if (w.length < 2) return ' ';
+  const slope = (w[w.length - 1][key] - w[0][key]) / (w.length - 1);
+  return Math.abs(slope) < 0.05 ? '–' : slope > 0 ? '▲' : '▼';
+}
+
+/** Everything that is currently wrong, worst first. */
+function alerts(s: State): LogLine[] {
+  const lines: LogLine[] = [];
+  const bad = (text: string) => lines.push(warn(text));
+  for (const [key, label] of [['oxygen', 'Oxygen'], ['food', 'Food']] as const) {
+    const net = stockNet(s, key);
+    if (s[key] <= 0) lines.push({ kind: 'err', text: `${label} is depleted. Net ${signed(net)}/tick.` });
+    else if (s[key] < 20) bad(`${label} is low (${s[key].toFixed(0)}). Net ${signed(net)}/tick. See "status ${key}".`);
+    else if (net < 0) bad(`${label} is falling ${signed(net)}/tick. ${forecast(s[key], net, STOCK_CAP, label)}`);
+  }
+  if (s.powerDemand > s.powerSupply) bad(`Power is short: ${s.powerDemand} wanted, ${s.powerSupply} produced. See "status power".`);
+  for (const r of s.rooms) {
+    const flags = roomProblems(r);
+    if (flags.length) bad(`${ROOM_DEFS[r.type].label} at ${coord(r.x, r.y)}: ${flags.join(', ')}.`);
+  }
+  const unhoused = s.crew.filter((c) => !c.housed);
+  if (unhoused.length) bad(`${plural(unhoused.length, 'colonist')} with no bunk: ${unhoused.map((c) => c.name).join(', ')}.`);
+  if (s.happiness < 50) bad(`Happiness is ${s.happiness.toFixed(0)}, below 50, so no new colonists will arrive. See "status happiness".`);
+  return lines.length ? [info(`Alerts (${lines.length}):`), ...lines] : [ok('All clear. Nothing needs attention.')];
+}
+
+type Report = (s: State, window: Sample[]) => LogLine[];
+
+const signed = (n: number, digits = 1) => (n > 0 ? '+' : '') + n.toFixed(digits);
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** Heading, graph and a one-line trend summary shared by every category report. */
+function graph(title: string, series: number[], top: number, unit = ''): LogLine[] {
+  const n = series.length;
+  const first = series[0];
+  const last = series[n - 1];
+  const perTick = (last - first) / (n - 1);
+  const word = Math.abs(perTick) < 0.05 ? 'steady' : perTick > 0 ? 'rising' : 'falling';
+  return [
+    info(`${title}: last ${n} ticks`),
+    ...asciiChart(series, top).map(info),
+    info(`  Now ${last.toFixed(unit === '' ? 0 : 1)}${unit}, ${word} (${signed(last - first)} over ${n - 1} ticks, ${signed(perTick, 2)}/tick). Low ${Math.min(...series).toFixed(0)}, high ${Math.max(...series).toFixed(0)}.`),
+  ];
+}
+
+/** How a stock will change at a steady net rate, as a sentence fragment. */
+function forecast(stock: number, net: number, cap: number, what: string): string {
+  if (net < -0.005 && stock <= 0) return `${what} is depleted.`;
+  if (net < -0.005) return `${what} runs out in about ${plural(Math.ceil(stock / -net), 'tick')}.`;
+  if (net > 0.005 && stock < cap) return `${what} fills in about ${plural(Math.ceil((cap - stock) / net), 'tick')}.`;
+  return stock >= cap ? `${what} is full.` : `${what} is holding steady.`;
+}
+
+function stockReport(title: string, key: 'oxygen' | 'food', unitLabel: string, makers: Room[], output: number, perHead: number, remedy: string): Report {
+  return (s, w) => {
+    const working = makers.filter((r) => r.powered);
+    const made = working.length * output;
+    const used = s.crew.length * perHead;
+    const net = made - used;
+    const lines = [
+      ...graph(title, w.map((x) => x[key]), STOCK_CAP),
+      info(`  Made      ${made.toFixed(1)}/tick  (${working.length} of ${plural(makers.length, unitLabel)} powered, ${output} each)`),
+      info(`  Used      ${used.toFixed(1)}/tick  (${plural(s.crew.length, 'colonist')} x ${perHead})`),
+      (net < 0 ? warn : info)(`  Net       ${signed(net)}/tick. ${forecast(s[key], net, STOCK_CAP, title)}`),
+    ];
+    if (working.length < makers.length) lines.push(warn(`  ${plural(makers.length - working.length, unitLabel)} offline. Check "rooms" for NOT WIRED or NO POWER.`));
+    if (net < 0) lines.push(warn(`  ${remedy}`));
+    return lines;
+  };
+}
+
+const CATEGORIES: Record<string, Report> = {
+  power: (s, w) => {
+    const reactors = s.rooms.filter((r) => r.type === 'reactor');
+    const top = Math.max(...w.map((x) => Math.max(x.powerDemand, x.powerSupply)), 1);
+    const spare = s.powerSupply - s.powerDemand;
+    const lines = [
+      ...graph('Power wanted', w.map((x) => x.powerDemand), top),
+      (spare < 0 ? warn : info)(`  Wanted ${s.powerDemand}, produced ${s.powerSupply} (${plural(reactors.length, 'reactor')} x ${REACTOR_OUTPUT}): ${spare < 0 ? `${-spare} short` : `${spare} spare`}.`),
+    ];
+    for (const rx of reactors) {
+      const load = reactorLoad(s, rx.id);
+      const fed = s.rooms.filter((r) => r.powerFrom === rx.id).length;
+      lines.push((load >= REACTOR_OUTPUT ? warn : info)(`  Reactor ${coord(rx.x, rx.y)}  ${load}/${REACTOR_OUTPUT} used, ${REACTOR_OUTPUT - load} spare, wired to ${plural(fed, 'room')}`));
+    }
+    for (const r of s.rooms) {
+      if (!needsPower(r.type)) continue;
+      const where = `${ROOM_DEFS[r.type].label} at ${coord(r.x, r.y)}`;
+      const src = roomById(s, r.powerFrom);
+      if (!src) lines.push(warn(`  ${where}: not wired. Needs ${ROOM_DEFS[r.type].draw}.`));
+      else if (!r.powered) {
+        const far = dist(r, src) > ROOM_DEFS.reactor.radius;
+        lines.push(warn(`  ${where}: wired to ${coord(src.x, src.y)} but ${far ? 'out of range' : 'that reactor is overloaded'}. Needs ${ROOM_DEFS[r.type].draw}.`));
+      }
+    }
+    if (spare < 0) lines.push(warn('  Build another reactor, then wire the unpowered rooms to it.'));
+    return lines;
+  },
+  oxygen: (s, w) => stockReport('Oxygen', 'oxygen', 'oxygen plant', s.rooms.filter((r) => r.type === 'oxygen'), OXYGEN_OUTPUT, COLONIST_O2,
+    'Build and wire another oxygen plant (each makes 3, and each colonist breathes 0.5).')(s, w),
+  food: (s, w) => stockReport('Food', 'food', 'garden', s.rooms.filter((r) => r.type === 'garden'), GARDEN_OUTPUT, COLONIST_FOOD,
+    'Build and wire another garden (each makes 2, and each colonist eats 0.3).')(s, w),
+  materials: (s, w) => {
+    const income = 1 + s.crew.length * MATERIAL_PER_COLONIST;
+    const lines = [
+      ...graph('Materials', w.map((x) => x.materials), Math.max(...w.map((x) => x.materials)), ''),
+      info(`  Income    ${income.toFixed(1)}/tick  (1 base + ${MATERIAL_PER_COLONIST} per colonist x ${s.crew.length})`),
+      info('  Affordable:'),
+    ];
+    for (const t of BUILDABLE) {
+      const cost = ROOM_DEFS[t].cost;
+      const wait = Math.ceil((cost - s.materials) / income);
+      lines.push((wait > 0 ? warn : info)(`    ${t.padEnd(9)} ${String(cost).padStart(3)}  ${wait <= 0 ? 'now' : `in ${plural(wait, 'tick')}`}`));
+    }
+    return lines;
+  },
+  colonists: (s, w) => {
+    const slots = housingSlots(s);
+    const free = slots.length - s.crew.length;
+    const unhoused = s.crew.filter((c) => !c.housed).length;
+    const quarters = s.rooms.filter((r) => r.type === 'quarters');
+    const idle = quarters.filter((r) => !(r.powered && r.breathable));
+    const lines = [
+      ...graph('Colonists', w.map((x) => x.colonists), Math.max(...w.map((x) => x.colonists), 1)),
+      info(`  Beds      ${slots.length}  (hub ${HUB_CAPACITY} + ${quarters.length - idle.length} working quarters x ${QUARTERS_CAPACITY}), ${Math.max(free, 0)} free`),
+      (unhoused ? warn : info)(`  Housed    ${s.crew.length - unhoused} of ${s.crew.length}${unhoused ? `, ${unhoused} with no bunk` : ''}`),
+    ];
+    if (idle.length) lines.push(warn(`  ${plural(idle.length, 'quarters room')} not counted: needs both power and air. See "rooms".`));
+    if (free <= 0) lines.push(warn('  Next arrival: blocked, no free beds. Build and connect more quarters.'));
+    else if (s.happiness < 50) lines.push(warn(`  Next arrival: paused until happiness reaches 50 (now ${s.happiness.toFixed(0)}).`));
+    else lines.push(info(`  Next arrival: in ${plural(s.arrival, 'tick')}.`));
+    return lines;
+  },
+  happiness: (s, w) => {
+    const target = 100 * (s.mood.air + s.mood.food + s.mood.housing + s.mood.fun) / 4;
+    const parts: [string, number, string][] = [
+      ['air', s.mood.air, 'Oxygen stock is low. See "status oxygen".'],
+      ['food', s.mood.food, 'Food stock is low. See "status food".'],
+      ['housing', s.mood.housing, 'Colonists have no bunk. See "status colonists".'],
+      ['fun', s.mood.fun, 'Build lounges near your quarters.'],
+    ];
+    const weakest = parts.reduce((a, b) => (b[1] < a[1] ? b : a));
+    const lines = [
+      ...graph('Happiness', w.map((x) => x.happiness), 100),
+      info(`  Heading toward ${target.toFixed(0)} (moves 10% of the gap each tick).`),
+      ...parts.map(([k, v]) => (v < 0.5 ? warn : info)(`  ${k.padEnd(8)} ${pct(v).padStart(4)}  ${'█'.repeat(Math.round(v * 10)).padEnd(10, '░')}`)),
+    ];
+    if (weakest[1] < 1) lines.push(warn(`  Weakest: ${weakest[0]}. ${weakest[2]}`));
+    if (s.happiness < 50) lines.push(warn('  Below 50: no new colonists will arrive.'));
+    return lines;
+  },
+};
+
+/** Everything `status` accepts as its first argument. */
+const STATUS_VIEWS = [...Object.keys(CATEGORIES), 'alerts'];
 
 export const COMMANDS: Record<string, Command> = {
   help: {
@@ -86,18 +297,36 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   status: {
-    usage: 'status',
-    summary: 'Resource and happiness overview.',
-    run: (s) => ({
-      lines: [
-        info(`Power       ${s.powerDemand} wanted / ${s.powerSupply} produced`),
-        info(`Oxygen      ${s.oxygen.toFixed(0)}`),
-        info(`Food        ${s.food.toFixed(0)}`),
-        info(`Materials   ${Math.floor(s.materials)}`),
-        info(`Population  ${s.crew.length}`),
-        info(`Happiness   ${s.happiness.toFixed(0)}  (air ${pct(s.mood.air)}, food ${pct(s.mood.food)}, housing ${pct(s.mood.housing)}, fun ${pct(s.mood.fun)})`),
-      ],
-    }),
+    usage: `status [${STATUS_VIEWS.join(' | ')}] [-time <ticks>]`,
+    summary: 'Colony overview, "alerts" for everything wrong, or a graph and diagnosis of one category over the last 30 ticks.',
+    flags: { '-time': `How many ticks of history to graph (2-${HISTORY_CAP}, default ${DEFAULT_WINDOW}).` },
+    run: (s, a) => {
+      const name = a.pos[0];
+      if (name === 'alerts') return { lines: alerts(s) };
+      if (name) {
+        const report = Object.hasOwn(CATEGORIES, name) ? CATEGORIES[name] : undefined;
+        if (!report) return err(`Unknown status option "${name}". Options: ${STATUS_VIEWS.join(', ')}.`);
+        const raw = a.flags['-time'];
+        const asked = raw === undefined ? DEFAULT_WINDOW : Number(raw);
+        if (!Number.isInteger(asked) || asked < 2 || asked > HISTORY_CAP) return err(`-time must be a whole number of ticks from 2 to ${HISTORY_CAP}.`);
+        if (s.history.length < 2) return { lines: [warn('Not enough history yet. Try again in a moment.')] };
+        const n = Math.min(asked, s.history.length);
+        const lines = report(s, s.history.slice(-n));
+        if (n < asked) lines.splice(1, 0, warn(`Only ${n} ticks of history so far, so graphing those.`));
+        return { lines };
+      }
+      return {
+        lines: [
+          info(`Power       ${s.powerDemand} wanted / ${s.powerSupply} produced ${arrow(s, 'powerDemand')}`),
+          info(`Oxygen      ${s.oxygen.toFixed(0)} ${arrow(s, 'oxygen')}`),
+          info(`Food        ${s.food.toFixed(0)} ${arrow(s, 'food')}`),
+          info(`Materials   ${Math.floor(s.materials)} ${arrow(s, 'materials')}`),
+          info(`Population  ${s.crew.length} ${arrow(s, 'colonists')}`),
+          info(`Happiness   ${s.happiness.toFixed(0)} ${arrow(s, 'happiness')}`),
+          info(`Arrows show the change over the last ${TREND_TICKS} ticks. Try "status alerts" or "status <category>".`),
+        ],
+      };
+    },
   },
   build: {
     usage: 'build <type> -location <cell>   e.g. build reactor -location B4',
@@ -235,7 +464,7 @@ export const COMMANDS: Record<string, Command> = {
       if (r.type === 'quarters') {
         const src = roomById(s, r.airFrom);
         lines.push(r.airFrom === null ? warn('  Air: NOT PIPED') : r.breathable ? info(`  Air: flowing (plant at ${coord(src!.x, src!.y)})`) : warn('  Air: piped, but no supply (plant unpowered, out of range, or full)'));
-        lines.push(info(`  Rec rooms in range: ${r.recCount}`));
+        lines.push(info(`  Lounges in range: ${r.loungeCount}`));
       }
       return { lines, select: p, focus: p };
     },
@@ -245,13 +474,9 @@ export const COMMANDS: Record<string, Command> = {
     summary: 'List every room and whether it is working.',
     run: (s) => ({
       lines: s.rooms.map((r) => {
-        const flags: string[] = [];
-        if (needsPower(r.type) && r.powerFrom === null) flags.push('NOT WIRED');
-        else if (needsPower(r.type) && !r.powered) flags.push('NO POWER');
-        if (r.type === 'quarters' && r.airFrom === null) flags.push('NOT PIPED');
-        else if (r.type === 'quarters' && !r.breathable) flags.push('NO AIR');
+        const flags = roomProblems(r);
         const l = `  ${coord(r.x, r.y).padEnd(4)} ${ROOM_DEFS[r.type].label}${flags.length ? '  [' + flags.join(', ') + ']' : ''}`;
-        return flags.length ? warn(l) : info(l);
+        return flags.length ? warn(l) : { kind: 'info', text: `${l}  `, tag: { text: '[OPERATIONAL]', kind: 'ok' } };
       }),
     }),
   },
@@ -275,6 +500,40 @@ export const COMMANDS: Record<string, Command> = {
       return { lines: [ok(`Speed set to ${sp === 1 ? '1x' : sp === 0.5 ? '1/2x' : '1/4x'}.`)] };
     },
   },
+  view: {
+    usage: 'view zoom <in|out> [steps] | view pan <up|down|left|right> [cells] | view <room type> | view reset',
+    summary: 'Zoom, pan, or highlight the map. "reset" restores the full view and clears any highlight.',
+    run: (s, { pos: [sub, a, b] }) => {
+      if (sub === 'reset') return { lines: [ok('View reset.')], view: { reset: true, highlight: null } };
+
+      if (sub === 'zoom') {
+        if (a !== 'in' && a !== 'out') return err('Usage: view zoom <in|out> [steps]');
+        const steps = amount(b, 1, MAX_ZOOM_STEPS);
+        if (steps === null) return err(`Steps must be a number from above 0 to ${MAX_ZOOM_STEPS}.`);
+        const factor = ZOOM_STEP ** steps;
+        return { lines: [ok(`Zoomed ${a}.`)], view: { zoom: a === 'in' ? factor : 1 / factor } };
+      }
+
+      if (sub === 'pan') {
+        const dir = a ? PAN_DIRS[a] : undefined;
+        if (!dir) return err('Usage: view pan <up|down|left|right> [cells]');
+        const cells = amount(b, DEFAULT_PAN_CELLS, MAX_PAN_CELLS);
+        if (cells === null) return err(`Cells must be a number from above 0 to ${MAX_PAN_CELLS}.`);
+        return { lines: [ok(`Panned ${a}.`)], view: { pan: { x: dir.x * cells, y: dir.y * cells } } };
+      }
+
+      if (sub) {
+        // "view garden" (or "gardens"): light up every room of that type.
+        const type = ROOM_TYPES.find((t) => t === sub || t + 's' === sub);
+        if (!type) return err(`Unknown view option "${sub}". Try: zoom, pan, reset, or a room type (${ROOM_TYPES.join(', ')}).`);
+        const found = s.rooms.filter((r) => r.type === type);
+        if (!found.length) return { lines: [warn(`No ${ROOM_DEFS[type].label} built.`)], view: { highlight: null } };
+        const cells = found.map((r) => coord(r.x, r.y)).join(', ');
+        return { lines: [ok(`Highlighting ${found.length} ${ROOM_DEFS[type].label}: ${cells}. "view reset" clears it.`)], view: { highlight: type } };
+      }
+      return err('Usage: view zoom <in|out> [steps] | view pan <dir> [cells] | view <room type> | view reset');
+    },
+  },
   clear: {
     usage: 'clear',
     summary: 'Clear the terminal.',
@@ -291,6 +550,39 @@ export function execute(s: State, line: string): CommandResult {
   const cmd = COMMANDS[name];
   if (!cmd) return err(`Unknown command "${name}". Type "help".`);
   return cmd.run(s, parseArgs(rest));
+}
+
+/**
+ * The room a half-typed `build` line would construct, for the map's ghost preview. `at` is the cell
+ * from -location (any alias) when it parses, otherwise null. Returns null unless the type is complete.
+ */
+export function buildPreview(input: string): { type: RoomType; at: { x: number; y: number } | null } | null {
+  const [name, ...rest] = input.trim().toLowerCase().split(/\s+/);
+  if (name !== 'build') return null;
+  const a = parseArgs(rest);
+  const type = a.pos[0];
+  if (!type || !isRoomType(type)) return null;
+  const cell = a.flags['-location'];
+  return { type, at: cell ? parseCoord(cell) : null };
+}
+
+/**
+ * The connection a half-typed `wire` or `pipe` line would make, once both -from and -to are cells
+ * holding rooms. `valid` covers room types and range, not spare capacity.
+ */
+export function linkPreview(s: State, input: string): { kind: 'wire' | 'pipe'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null {
+  const [name, ...rest] = input.trim().toLowerCase().split(/\s+/);
+  if (name !== 'wire' && name !== 'pipe') return null;
+  const a = parseArgs(rest);
+  const fp = a.flags['-from'] ? parseCoord(a.flags['-from']) : null;
+  const tp = a.flags['-to'] ? parseCoord(a.flags['-to']) : null;
+  if (!fp || !tp) return null;
+  const from = roomAt(s, fp.x, fp.y);
+  const to = roomAt(s, tp.x, tp.y);
+  if (!from || !to) return null;
+  const [srcType, radius] = name === 'wire' ? (['reactor', ROOM_DEFS.reactor.radius] as const) : (['oxygen', ROOM_DEFS.oxygen.radius] as const);
+  const dstOk = name === 'wire' ? needsPower(to.type) : to.type === 'quarters';
+  return { kind: name, from: fp, to: tp, valid: from.type === srcType && dstOk && dist(from, to) <= radius };
 }
 
 /** Cells of rooms that make sense as the value of a given flag, for completion. */
@@ -322,6 +614,18 @@ export function suggest(s: State, input: string): { completions: string[]; parti
   if (tokens.length === 0) options = Object.keys(COMMANDS);
   else if (name === 'help') options = Object.keys(COMMANDS);
   else if (name === 'speed') options = ['1', '1/2', '1/4'];
+  else if (name === 'status') {
+    if (flagContext === '-time') {
+      options = ['10', '30', '60', '120'];
+      hint = `-time expects a number of ticks, 2 to ${HISTORY_CAP}.`;
+    } else {
+      options = [...(tokens.length === 1 ? STATUS_VIEWS : []), ...(usedFlags.has('-time') ? [] : ['-time'])];
+    }
+  } else if (name === 'view') {
+    if (tokens.length === 1) options = ['zoom', 'pan', 'reset', ...ROOM_TYPES];
+    else if (tokens.length === 2 && tokens[1] === 'zoom') options = ['in', 'out'];
+    else if (tokens.length === 2 && tokens[1] === 'pan') options = Object.keys(PAN_DIRS);
+  }
   else if (flagContext && COMMANDS[name]?.flags?.[flagContext]) {
     options = cellsFor(s, name, flagContext);
     hint = `${flagContext} expects a cell like B4. ${options.length ? 'Valid: ' + options.join(' ') : ''}`;
