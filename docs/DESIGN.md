@@ -153,6 +153,63 @@ Everything in this section is the intended direction, agreed in design discussio
 
 **Decided.** The crew is not fixed. The colony starts with 4 named colonists and grows as the player builds quarters, which is what justifies needing more food, oxygen and power (built). Colonists are mechanically thin for now: abstract, with a name and a role, and their needs roll up into the shared happiness score. This may change later, for example towards individuals with personalities, but not yet.
 
+### Structures, tiers and compute
+
+Agreed in design discussion on 2026-10-19. Nothing here is built. Implementation is broken into small slices in [`docs/specs/`](specs/README.md), each with a human test checklist. Numbers in this section and in the specs are placeholders until balanced in play, unless stated.
+
+**Categories (Decided).** Rooms are grouped into categories: power, life support, food, habitation, industry, compute, defense and maintenance. A category is a filing and browsing layer only. It never changes how you build: `build <type> -location <cell>` stays exactly as it is, and type names stay unique. Categories are used for discovery:
+
+- `build` alone lists the categories; `build <category>` lists the types in it with cost, tier and lock status. Locked types are shown with their unlock requirement so the player can plan ahead.
+- `view <category>` lights up every room in the category, the way `view <room type>` does now.
+- `help` and Tab completion group by category.
+- Category names must not collide with room type names (the life support category is `life`, because `oxygen` is already a room type). Category names are `power`, `life`, `food`, `habitat`, `industry`, `compute`, `defense`, `maint`.
+- Categories may later carry real mechanics (research grouping, wave targeting, corruption weighting), but that is a separate decision and is **Open**.
+
+**Compute (Decided).** Compute is a **capacity**, not a stock, and works like power:
+
+- Compute rooms produce capacity. Running scripts reserve capacity continuously, and research projects occupy capacity until they finish. The player cannot research and automate everything at once, which makes "how much do I automate?" a budget and placement decision.
+- This reuses the per-tick instruction budget idea in Scripting below: the budget is the compute capacity.
+- **Proposed:** heavier compute load raises the corruption rate, so automation has a cost (see Corruption).
+
+**Research (Decided).** Research is a **command** (`research <tech>`) that reserves compute capacity until the project finishes. The Command Hub is assumed to be smart enough to provide research, so there is no lab room to start. **Open:** a lab could return later as a Mk2 or Mk3 upgrade of the server rack if research should feel more physical. Completed research unlocks structures and tiers, which appear as locked entries in the `build` listing until then. Meta-progression decides which blueprints are in the research pool at the start of a run.
+
+**Tiers (Decided).** Three tiers to start:
+
+- **Mk1:** built normally.
+- **Mk2:** an in-place upgrade (`upgrade -location <cell>`), so the player can keep their opening base design.
+- **Mk3:** a new building, with a larger boost, that must be integrated into the colony. It needs a new link type that the category's Mk1 and Mk2 never used. Integration should be a layout puzzle and a placement test, not just a bigger number.
+- **Proposed:** Mk3 buildings take a larger footprint (2x2), so a player who leaves spare room in their layout is rewarded. Whether Mk3 consumes or replaces the Mk2 (with a bonus refund) is **Open**. The grid is small (16 by 10), so footprints depend on the expansion question in Ideas under consideration.
+
+**Link types (Decided: more are needed; the set is Proposed).** Each new link has a natural home and its own verb and un-verb, like `wire`/`unwire` and `pipe`/`unpipe`:
+
+| Link | Carries | Used by |
+|---|---|---|
+| Data | Compute and script control | Compute rooms, turrets, Mk3 habitat and maintenance |
+| Coolant | Heat removal | Mk3 power, life support, compute and defense |
+| Cargo | Materials and ammo | Industry, Mk3 food, turrets |
+
+Early tiers should need at most one new link type each, so typing load stays low in a game that cannot be paused. Links follow the existing rules: explicit, persistent when broken, and errors that explain themselves.
+
+**Data network (Decided: hub as root; switch Proposed).**
+
+- The Command Hub is the root of the data network. Anything that needs a data link must reach the hub, directly or through relays.
+- **Network switch (Proposed):** a compute-category room that needs power, relays data to rooms within its own radius, and has a port limit (like the oxygen plant's 4 pipes). It lets the player plan the colony in sections without running data across the whole map. It is also a wave target: losing a switch cuts a whole section off.
+
+**Proposed category contents.** Mk1 and Mk2 are in place; Mk3 is a new building. Names are placeholders.
+
+| Category | Mk1 | Mk2 | Mk3 | New link at Mk3 |
+|---|---|---|---|---|
+| Power | Reactor | Higher output and radius | Fusion core (2x2) | Coolant |
+| Life support | Oxygen plant | More pipe slots | Atmosphere processor | Coolant |
+| Food | Hydroponics | Higher yield | Bio-dome | Cargo |
+| Habitation | Quarters, lounge | More beds, bigger boost | Habitat ring | Data |
+| Industry | Mine (needs a deposit), fabricator | Faster output | Refinery | Cargo |
+| Compute | Server rack, network switch | More capacity | Data core | Coolant |
+| Defense | Turret | Better damage and range | Shield or beam array | Coolant and cargo |
+| Maintenance | Repair bay | Faster repairs | Antivirus core | Data |
+
+**Build order for this work (Decided).** Compute first (it enables research and automation and introduces the data link), then Industry (it gives expansion a reason and introduces the cargo link), then Defense (with Slice 2 and the first wave type; it wants coolant and cargo to exist). The ordered slices, with a footprint slice before the Mk3 buildings, are in [`docs/specs/`](specs/README.md).
+
 ### Scripting
 
 **Decided direction, no detailed design.** The long-term hook. The ladder is: manual commands, then repetition, then scripts.
@@ -248,9 +305,10 @@ Text-only play risks fatigue, so small ASCII or GUI visualisations (maps, bars) 
 ### Suggested build order
 
 1. **Slice 1 (done):** layout, ticks, radius rules, basic commands, one economy, explicit wire/pipe, population growth.
-2. **Slice 2:** one wave type, turrets, simple scripts.
-3. **Slice 3:** happiness consequences, corruption.
-4. **Later:** enemy factions, win paths, meta-progression.
+2. **Structures track (planned):** categories, tiers and `upgrade`, compute capacity, the data link and network switch, `research`, multi-cell footprints, Mk3 buildings and the coolant link, then industry and the cargo link. See [`docs/specs/`](specs/README.md). This runs alongside the slices below; the Defense category lands with Slice 2.
+3. **Slice 2:** one wave type, turrets, simple scripts.
+4. **Slice 3:** happiness consequences, corruption.
+5. **Later:** enemy factions, win paths, meta-progression.
 
 ## Ideas under consideration
 
@@ -269,6 +327,8 @@ Work in progress. Nothing here is decided. Each entry records the problem, the o
 | Upkeep and decay | Push | Rooms wear out and cost materials to repair, so income has to keep rising just to stay level. | Easily reads as a tax if overdone. |
 | Arrivals keep coming and want more | Pull | Colonists already arrive when there are free beds and happiness is at least 50. Arrival pace could rise over time, or later arrivals could need specific roles or rooms. | Needs a reason the player cannot just refuse arrivals. |
 | Goals and unlocks | Pull | The two win paths (Ascension, Conquest) and meta-progression unlocks only come from growth, so staying put means never winning or unlocking anything. | Needs the win paths to exist first. |
+
+**Related, now decided:** advanced structures unlocked through compute-based research (see "Structures, tiers and compute") are a pull toward growth, since Mk2 and Mk3 need materials and, for Mk3, spare space and a new link. The Industry slice (deposits, mines, cargo) is where finite resources would be tested first; see [`docs/specs/08-industry-and-cargo.md`](specs/08-industry-and-cargo.md).
 
 **Current leaning (Proposed).** Combine finite local resources with escalating waves, and use the win paths as the reason to care. Finite deposits give a specific, readable reason to expand ("the nearby ore is running out") instead of a vague timer. Waves keep the clock honest. Avoid leaning on upkeep alone.
 
