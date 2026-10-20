@@ -305,6 +305,35 @@ Agreed in design discussion on 2026-10-20. Nothing here is built. The implementa
 - **Proposed:** scripts are unlocked progressively (see Meta-progression): early runs force hand-typing; later runs unlock `repeat`, `on <event>`, `define`, so the player's *capability* grows, not just their stats.
 - Scripts run as background processes the player can list and stop. Idea: automation is what lets the player scale up, and it also creates new problems (see Corruption).
 
+**Update 2026-10-20: first-release direction.** Implementation slices are [`docs/specs/12-scripting-record-and-run.md`](specs/12-scripting-record-and-run.md) (specced) and [`docs/specs/13-scripting-language-and-queries.md`](specs/13-scripting-language-and-queries.md) (design needed, not ready to build).
+
+**Script types are a way to think, not a game mechanic (Decided).** Scripts can be grouped by what they do, which helps us see how scripting gets used and what to design for. The game does not know about the groups. There is one scripting language, and the **available commands decide what is possible**. Groups identified so far:
+
+- **Build automation:** wiring and piping new rooms, upgrading, and keeping the layout connected.
+- **Crew development:** training and assigning crew.
+- **Corruption control:** detecting corruption and alerting or fixing it. Needs more design; see below.
+- **Combat:** offensive and defensive behaviour.
+- **Also identified (Proposed ideas):** emergency playbooks that run when a wave warning fires and restore things afterwards; resource governors (load shedding, rerouting when a plant fails, keeping a stock above a threshold); expansion scripts that survey the frontier or sweep for the rival colony; compute governors that balance research, survey and scripts against capacity; scripted drones that repair, haul or scout (visible automation); and `simulate` or dry runs to test a script against a copy of the colony for a compute cost.
+- **Meta ideas (Proposed):** scripts saved across runs and unlocked through meta-progression, and shareable scripts with seeded daily runs scored by compute efficiency.
+
+**Every command must be scriptable (Decided).** Because commands define what scripts can do, each new command should succeed or fail in a predictable way a script can react to (the existing error messages already do this), and the game needs ways to **ask questions**, not only give orders. Build automation needs answers such as which reactor has spare power. How the player queries the colony is **Open** and is the subject of the language-and-queries spec.
+
+**Build automation is the first type players meet (Decided).** It is the easiest to show visually: a script wiring a new room is something the player can watch on the map. The intended ladder, each step adding one idea:
+
+1. **Record.** The player does something by hand, and the game saves it (`record <name>`, then `stop`).
+2. **Generalize.** The player replaces a fixed cell with a variable or a selector such as `nearest reactor`, so the script works on any room.
+3. **Trigger.** The player attaches the script to an event, such as `on build run <script>`, so every new room is wired automatically.
+
+Only step 1 is specced for implementation. Steps 2 and 3 depend on the language and query design, which is **deferred** on purpose.
+
+**Scripts and compute (Decided in principle).** A running script reserves compute capacity (see Structures, tiers and compute). The per-tick instruction budget idea above is that budget. Exact costs are placeholders in the spec.
+
+**Corruption control, needed work (Proposed directions).** Auto-fixing everything would defeat corruption's purpose, which is to keep hands on the keyboard. Ways around that:
+
+- Split it into **detect** and **fix**. Cheap detection scripts alert, and fixing minor corruption can be automated while major corruption stays manual.
+- Monitoring costs compute in proportion to how much is watched, so heavy monitoring has a price.
+- Corruption can hit the watching scripts themselves, so guarding scripts needs **checkpoints and rollback** (`checkpoint`, `restore`), a version-control idea that suits programmers.
+
 ### Threats and waves
 
 **Decided.** Waves of enemies and non-combat events pressure the colony. Pressure from scarcity and from threats should be equal in weight.
@@ -393,7 +422,7 @@ Text-only play risks fatigue, so small ASCII or GUI visualisations (maps, bars) 
 
 1. **Slice 1 (done):** layout, ticks, radius rules, basic commands, one economy, explicit wire/pipe, population growth.
 2. **Structures track (planned):** categories, tiers and `upgrade`, compute capacity, the data link and network switch, `research`, multi-cell footprints, Mk3 buildings and the coolant link, the larger map and `survey`, then industry and the cargo link, then crew staffing and the academy. See [`docs/specs/`](specs/README.md). This runs alongside the slices below; the Defense category lands with Slice 2.
-3. **Slice 2:** one wave type, turrets, simple scripts.
+3. **Slice 2:** one wave type, turrets, simple scripts. The first scripting step (record and run) is specced in [`docs/specs/12-scripting-record-and-run.md`](specs/12-scripting-record-and-run.md); the language and query design behind later steps is still open.
 4. **Slice 3:** happiness consequences, corruption.
 5. **Later:** enemy factions, win paths, meta-progression.
 
