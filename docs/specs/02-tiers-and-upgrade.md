@@ -49,6 +49,10 @@ Power draw rises modestly where the room does more (placeholder: +1 for the oxyg
 
 Existing constants (`REACTOR_OUTPUT`, `OXYGEN_PIPES`, `OXYGEN_OUTPUT`, `GARDEN_OUTPUT`, `QUARTERS_CAPACITY`) become per-tier lookups instead of single values. Everything that reads them must use the room's tier: `recompute`, the housing slot count, the status diagnostics, the range checks in `wire` and `pipe`, the radius rings and the previews.
 
+## Design for growth
+
+The Mk3 step is a new building, and a category may eventually have two Mk3 flavours (an Ascension one and a Conquest one, see DESIGN.md). So the data model should not assume exactly one Mk3 per Mk1 type. The only Mk3 behaviour in this slice is the already-Mk2 message, which should say that Mk3 is a separate building without naming a specific one.
+
 ## Interactions to get right
 
 - Upgrading a reactor changes its radius. Links that were out of range may start working, and none should break. The reverse (a downgrade) does not exist.

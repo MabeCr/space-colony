@@ -64,6 +64,10 @@ Empty categories are hidden until they contain something. (Open: show them greye
 
 **Tab completion.** After `build`, complete to category names and type names together. A prefix that is unique completes fully. A shared prefix completes to the common prefix, as today. After `view`, also complete category names.
 
+## Design for growth
+
+Categories will end up holding two or three Mk1 types each (DESIGN.md, "Variety within a category"), plus Mk3 types and possibly two Mk3 flavours. The data model and the `build <category>` listing must not assume one or two types per category: build the listing as a generic loop, with columns that stay readable at ten rows. Do not hard-code the Mk3 count per category anywhere.
+
 ## Human test checklist
 
 1. Load the page. Type `build` and press Enter. You see four categories: power, life, food, habitat.

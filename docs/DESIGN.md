@@ -195,7 +195,7 @@ Early tiers should need at most one new link type each, so typing load stays low
 - The Command Hub is the root of the data network. Anything that needs a data link must reach the hub, directly or through relays.
 - **Network switch (Proposed):** a compute-category room that needs power, relays data to rooms within its own radius, and has a port limit (like the oxygen plant's 4 pipes). It lets the player plan the colony in sections without running data across the whole map. It is also a wave target: losing a switch cuts a whole section off.
 
-**Proposed category contents.** Mk1 and Mk2 are in place; Mk3 is a new building. Names are placeholders.
+**Proposed category contents (baseline).** Mk1 and Mk2 are in place; Mk3 is a new building. Names are placeholders. This is the minimum set; the variety principle below adds more Mk1 rooms to the categories that need them.
 
 | Category | Mk1 | Mk2 | Mk3 | New link at Mk3 |
 |---|---|---|---|---|
@@ -207,6 +207,31 @@ Early tiers should need at most one new link type each, so typing load stays low
 | Compute | Server rack, network switch | More capacity | Data core | Coolant |
 | Defense | Turret | Better damage and range | Shield or beam array | Coolant and cargo |
 | Maintenance | Repair bay | Faster repairs | Antivirus core | Data |
+
+**Variety within a category (Decided principle; specific rooms Proposed).** Each category should eventually offer two or three Mk1 options that differ in **tradeoff, not just in numbers**, so that picking one is a real decision and the player is not simply choosing the bigger version. Added in the order the structures track introduces their link types, not all at once. Suggested starting variants, all names placeholders:
+
+| Category | Existing or baseline | Possible variants and the tradeoff |
+|---|---|---|
+| Food | Hydroponics: cheap, reliable | Algae vat: high output, needs coolant or heavy power. Synthesizer: makes food from materials, compute-hungry. |
+| Life support | Oxygen plant: produces air | Scrubber: cuts oxygen use instead of producing it. Reserve tank: buffers a shortage during a wave. |
+| Defense | Turret (single target) | Area-damage turret. Decoy or priority-target room. |
+| Power | Reactor | Battery (buffers, does not produce); solar (free but weak, radius-limited). |
+| Habitation | Quarters, lounge | Mess hall and gym (different happiness effects). |
+
+**Defense variety is tied to the factions.** The three Mk1 defense roles map onto the faction table in Enemy factions: a single-target turret answers rogue machines, an area-damage turret answers aliens, and a decoy or priority-target room answers pirates. The player reads the incoming threat and builds for it. This also supports the requirement that all factions be about equally fun and difficult: each has a natural counter that is a real choice, not an obvious best room.
+
+**Mk3 fork between the win paths (Proposed; exclusivity Open).** The proposal is that each category's Mk3 comes in two flavours, one leaning toward Ascension and one toward Conquest, so that the player's late-game commitment is expressed through what they build, not through a menu. The Ascension flavour favours stability, efficiency and research output. The Conquest flavour favours burst output, military support and surplus. Illustrative pairs:
+
+| Category | Ascension flavour | Conquest flavour |
+|---|---|---|
+| Power | Fusion core (stable, very large) | Overcharged core (burst output for turrets, runs hot) |
+| Compute | Data core (research speed) | Command core (scripting capacity for fleets) |
+| Food | Bio-dome (high happiness) | Ration plant (cheap bulk, feeds a larger crew) |
+| Defense | Shield array (protects the project) | Strike bay (sends out a strike force) |
+
+- **Open: mutually exclusive or not.** If researching one flavour locks out the other **per category**, the choice is a real commitment, and the player can still hedge across categories (the 70/30 idea in Win conditions). The current leaning is exclusive per category.
+- **Scope decision (Decided).** The fork roughly doubles the Mk3 content to balance, and the win paths are not built (Conquest is explicitly still open). So the extra Mk1 variants come first, since they enrich the early game, and the Mk3 fork is **held** until the win paths are specced. The Mk3 rooms in the specs (fusion core, data core) are the Ascension-flavour default and must not block adding a Conquest sibling later.
+- The fork needs research to support exclusive techs (a tech that excludes another). See the Research spec.
 
 **Build order for this work (Decided).** Compute first (it enables research and automation and introduces the data link), then Industry (it gives expansion a reason and introduces the cargo link), then Defense (with Slice 2 and the first wave type; it wants coolant and cargo to exist). The ordered slices, with a footprint slice before the Mk3 buildings, are in [`docs/specs/`](specs/README.md).
 

@@ -79,6 +79,10 @@ Tab completion offers tech names after `research`, and `cancel` plus running tec
 11. Tab completion offers tech names after `research`.
 12. `npm run typecheck` passes.
 
+## Design for growth: exclusive techs
+
+The Mk3 fork between win paths (DESIGN.md) will probably need techs that **exclude** each other: researching one flavour locks the other for that category. This slice does not implement the fork, but the tech data should be able to express an `excludes` list so the fork can be added without reworking research. If it is cheap, support it now and cover it in the checklist with a pair of test-only techs behind the dev flag; otherwise leave a clear extension point. In `research`, an excluded tech would show in the locked group as `excluded by <tech>`.
+
 ## Open questions
 
 - Hub baseline compute: none, or a small amount?

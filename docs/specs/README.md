@@ -39,4 +39,6 @@ Slices 1 and 6 touch different parts of the code and could be done in either ord
 - **Where the colony expands to** (DESIGN.md, Ideas under consideration). Slice 8 and the Mk3 footprint size depend on it.
 - **Whether categories ever carry mechanics** (wave targeting, corruption weighting). Not needed by any slice here.
 - **Whether Mk3 consumes or replaces the Mk2** it grows out of. Decided in Slice 7.
+- **The Mk3 fork between win paths** (an Ascension and a Conquest flavour per category, probably exclusive per category). Held until the win paths are specced; see DESIGN.md, "Mk3 fork between the win paths". No slice here implements it, but every slice should avoid assuming exactly one Mk3 per category.
+- **Extra Mk1 variants** (algae vat, scrubber, area turret and so on, see DESIGN.md, "Variety within a category"). Not part of slices 1 to 8; each variant is added after the slice that introduces the link type it needs, and gets its own small spec when it is picked up.
 - **Whether `demolish` refunds scale with upgrades.** Decided in Slice 2.

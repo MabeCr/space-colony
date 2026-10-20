@@ -40,6 +40,10 @@ Effects *(placeholder)*: the fusion core produces 40 power with radius 6; the da
 
 New techs: `mk3-fusion` (requires `mk2-reactor`) and `mk3-datacore` (requires `mk2-rack`, plus the data link tech if any). Each reserves compute while researched, per Slice 5.
 
+## Fork note
+
+The fusion core and the data core are the **Ascension-flavour** Mk3 for their categories (stability, efficiency, research). DESIGN.md proposes a Conquest sibling for each, such as an overcharged core and a command core, to be added once the win paths are specced and probably exclusive per category. Do not build the siblings here. Do name types, techs and data structures so that adding a sibling later is a pure addition: for example, avoid a one-to-one `mk3` field on the Mk1 type, and keep tech ids specific (`mk3-fusion`, not `mk3-power`).
+
 ## How Mk3 relates to Mk2
 
 This is the central design question. Two options; pick one, then record the choice in DESIGN.md and API.md.
@@ -78,3 +82,4 @@ This spec assumes Option A. If Option B is chosen, add a requirement and error: 
 - The final coolant verb names.
 - Should an overheating room eventually take damage or shut down permanently? Not in this slice.
 - Where does coolant live on the Mk3 side of other categories (atmosphere processor, bio-dome)? Left for later slices.
+- The Conquest-flavour siblings and whether the flavours are exclusive per category (DESIGN.md, Mk3 fork). Not decided here.
