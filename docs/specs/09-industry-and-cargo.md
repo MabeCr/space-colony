@@ -1,25 +1,27 @@
-# Slice 8: Industry and the cargo link
+# Slice 9: Industry and the cargo link
 
 **Goal.** Give materials a physical source (mines on deposits) and a cargo link to carry them, so that expansion has a readable reason: nearby deposits run out. This is the first test of the "finite local resources" idea from DESIGN.md.
 
-**Status:** Not started and **blocked** on one decision (below). **Depends on:** Slice 5.
+**Status:** Not started. **Depends on:** Slices 5 and 8.
 
-## The blocking decision
+## The map dependency
 
-DESIGN.md, Ideas under consideration, asks where the colony expands to. The grid is fixed at 16 by 10. Options are revealing more map over time or separate outpost grids linked by a command. Until that is settled, this slice can be built only as a **single-grid prototype**: a handful of deposits on the existing grid, with no way to go beyond it. A single-grid prototype is still worth building because it tests the mine, the deposit and the cargo link, but it cannot prove the expansion pressure. Do not treat it as the final design.
+The expansion question is settled (DESIGN.md, "Map expansion and survey"): the colony expands onto a larger map that is revealed with `survey`. This slice builds on [Slice 8](08-map-and-survey.md) and places deposits across the larger map. The starting area holds only a few, so the player has to survey to find more. Cargo reach is limited, so far deposits also need relays or chained links, which is where the expansion pressure comes from. Slice 8 decides how large the map is and how surveying works; this slice should not redefine either.
 
-## Scope (single-grid prototype)
+If Slice 8 is not done yet, a single-grid prototype (a handful of deposits on the 16 by 10 grid) can still test the mine, the deposit and the cargo link, but it cannot prove the expansion pressure.
 
-- Deposits on the map, visible from the start.
+## Scope
+
+- Deposits on the map. A few are visible in the starting area; the rest are hidden until a survey reveals them (Slice 8).
 - A mine room that can only be built on a deposit cell, and that produces materials by drawing the deposit down.
 - The cargo link, carrying materials from mines to the hub.
 - A fabricator, but only if its job is settled (see Open questions). Otherwise defer it.
 
-Out of scope: outposts, map reveal, surveying, the Mk3 refinery, ammo.
+Out of scope: outposts (parked, see DESIGN.md), the map and survey mechanics themselves (Slice 8), the Mk3 refinery, ammo.
 
 ## Deposits
 
-- A deposit is a cell with an amount of ore remaining *(placeholder: 200 to 500 per deposit)*. Deposits are generated at the start of a run from a seed, and are always visible, so the player can plan around them (DESIGN.md guardrail: pressure comes from information the player can see).
+- A deposit is a cell with an amount of ore remaining *(placeholder: 200 to 500 per deposit)*. Deposits are generated at the start of a run from a seed. Once revealed (starting area, or after a survey) a deposit stays visible with its amount, so the player can plan around it (DESIGN.md guardrail: pressure comes from information the player can see).
 - Show deposits on the map with a marker and the remaining amount on hover and in `inspect`. A `view deposits` command lists them with cells and amounts.
 - A deposit can only be built on by a mine. Other room types cannot be built on a deposit cell (a clear error).
 
@@ -67,7 +69,7 @@ Not specified. The category table in DESIGN.md lists it as an industry Mk1, but 
 
 ## Human test checklist
 
-1. Load the page. The map shows several deposits with markers. `view deposits` lists their cells and amounts.
+1. Load the page. The starting area shows a few deposits with markers. `view deposits` lists the revealed ones with cells and amounts. Run a `survey` (Slice 8) and confirm newly revealed deposits appear in the list.
 2. `build industry` lists the mine. `build garden -l <deposit cell>` is refused with a clear message about deposits.
 3. `build mine -l <deposit cell>` works. You are warned it needs wire and a cargo link.
 4. `rooms` shows the mine as `NOT WIRED` and `NOT CONNECTED`. Wire it, then `belt -f <mine> -t i6`. Both flags clear.
@@ -81,8 +83,7 @@ Not specified. The category table in DESIGN.md lists it as an industry Mk1, but 
 
 ## Open questions
 
-- The expansion decision (reveal more map, or outposts). This slice's real design depends on it.
 - Should base income fall to zero over time, or stay as a floor?
 - What does the fabricator do?
-- Can deposits be surveyed or prospected with a command, or are they all visible?
+- Does surveying reveal a deposit's exact amount, or a rough estimate that a mine then makes exact? (Exact is the default, to keep the information visible and plannable.)
 - Do deposits regrow? Default: no.

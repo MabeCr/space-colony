@@ -10,7 +10,7 @@
 - Two Mk3 buildings: the fusion core (power) and the data core (compute).
 - The rule for how a Mk3 relates to the Mk2 it grows out of.
 
-Out of scope: the other Mk3 rooms (atmosphere processor, bio-dome, habitat ring, refinery, shield or beam array, antivirus core). They follow the same pattern and are added in later slices, each with the link type it introduces (data and cargo are already in Slices 4 and 8).
+Out of scope: the other Mk3 rooms (atmosphere processor, bio-dome, habitat ring, refinery, shield or beam array, antivirus core). They follow the same pattern and are added in later slices, each with the link type it introduces (data and cargo are already in Slices 4 and 9).
 
 ## Coolant
 

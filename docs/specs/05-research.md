@@ -79,6 +79,10 @@ Tab completion offers tech names after `research`, and `cancel` plus running tec
 11. Tab completion offers tech names after `research`.
 12. `npm run typecheck` passes.
 
+## Design for growth: shared project mechanism
+
+`survey` (Slice 8) will reserve compute capacity for a duration in exactly the way a research project does, and the two compete for the same capacity. Build the reservation, progress, pause-when-capacity-drops and cancel logic as a generic "project" that research is one kind of, instead of hard-coding it to techs. Research stays its own command; no shared `projects` command is needed yet.
+
 ## Design for growth: exclusive techs
 
 The Mk3 fork between win paths (DESIGN.md) will probably need techs that **exclude** each other: researching one flavour locks the other for that category. This slice does not implement the fork, but the tech data should be able to express an `excludes` list so the fork can be added without reworking research. If it is cheap, support it now and cover it in the checklist with a pair of test-only techs behind the dev flag; otherwise leave a clear extension point. In `research`, an excluded tech would show in the locked group as `excluded by <tech>`.

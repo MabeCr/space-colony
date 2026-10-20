@@ -178,7 +178,7 @@ Agreed in design discussion on 2026-10-19. Nothing here is built. Implementation
 - **Mk1:** built normally.
 - **Mk2:** an in-place upgrade (`upgrade -location <cell>`), so the player can keep their opening base design.
 - **Mk3:** a new building, with a larger boost, that must be integrated into the colony. It needs a new link type that the category's Mk1 and Mk2 never used. Integration should be a layout puzzle and a placement test, not just a bigger number.
-- **Proposed:** Mk3 buildings take a larger footprint (2x2), so a player who leaves spare room in their layout is rewarded. Whether Mk3 consumes or replaces the Mk2 (with a bonus refund) is **Open**. The grid is small (16 by 10), so footprints depend on the expansion question in Ideas under consideration.
+- **Proposed:** Mk3 buildings take a larger footprint (2x2), so a player who leaves spare room in their layout is rewarded. Whether Mk3 consumes or replaces the Mk2 (with a bonus refund) is **Open**. The starting grid is small (16 by 10), but the colony will grow onto a larger revealed map (see "Map expansion and survey"), so 2x2 footprints should be workable once the player has surveyed more room.
 
 **Link types (Decided: more are needed; the set is Proposed).** Each new link has a natural home and its own verb and un-verb, like `wire`/`unwire` and `pipe`/`unpipe`:
 
@@ -233,7 +233,29 @@ Early tiers should need at most one new link type each, so typing load stays low
 - **Scope decision (Decided).** The fork roughly doubles the Mk3 content to balance, and the win paths are not built (Conquest is explicitly still open). So the extra Mk1 variants come first, since they enrich the early game, and the Mk3 fork is **held** until the win paths are specced. The Mk3 rooms in the specs (fusion core, data core) are the Ascension-flavour default and must not block adding a Conquest sibling later.
 - The fork needs research to support exclusive techs (a tech that excludes another). See the Research spec.
 
-**Build order for this work (Decided).** Compute first (it enables research and automation and introduces the data link), then Industry (it gives expansion a reason and introduces the cargo link), then Defense (with Slice 2 and the first wave type; it wants coolant and cargo to exist). The ordered slices, with a footprint slice before the Mk3 buildings, are in [`docs/specs/`](specs/README.md).
+**Build order for this work (Decided).** Compute first (it enables research and automation and introduces the data link), then the larger map and `survey` (it gives deposits and later the rival colony somewhere to be), then Industry (it gives expansion a reason and introduces the cargo link), then Defense (with Slice 2 and the first wave type; it wants coolant and cargo to exist). The ordered slices, with a footprint slice before the Mk3 buildings, are in [`docs/specs/`](specs/README.md).
+
+### Map expansion and survey
+
+Agreed in design discussion on 2026-10-20. Nothing here is built. The implementation slice is [`docs/specs/08-map-and-survey.md`](specs/08-map-and-survey.md).
+
+**Larger revealed map (Decided).** The colony expands onto a larger map instead of a separate set of outpost grids. Zoom, pan, the radius rules and the existing commands all carry over. The player starts on a small revealed area (today's 16 by 10 layout), and the rest of the map is hidden until surveyed. Separate outpost grids are **parked**, not rejected: an outpost can be thought of later as a far cluster joined by long-range links.
+
+**`survey` (Decided concept).** Survey is how the map is revealed. It is the outward-facing counterpart of `research`: research unlocks what you can build, and survey reveals where you can build it and what is out there.
+
+- **Spends compute (Proposed).** A survey occupies compute capacity for a duration, like a research project, so the two compete for the same capacity. Research leans toward Ascension and survey leans toward Conquest, which makes "what do I spend my compute on?" a real decision tied to the win-path commitment.
+- **Optional early, needed later (Decided, matching the guardrails).** Early on the starting area has enough to play with, and surveying is optional. By Act 2 the nearby deposits are running low, so surveying becomes necessary. Pressure should come from information the player can see, such as deposit amounts and warnings, not from surprise.
+- **What it reveals (Proposed).** Terrain, deposits, hazards and environment factors (the partly hidden environmental setup in Environment and rival colony), and finally the rival colony.
+- **Distance is the cost.** Far sites need power, air, data and cargo to reach them. The reach limits already in the game (and the network switch and relays) turn expansion into an infrastructure puzzle, not just a bigger build area.
+
+**Rival colony on the map (Decided).** The rival is placed far from the hub and stays hidden until a survey covers it. A player committed to Conquest has to survey heavily to find it. An Ascension player may never need to.
+
+**Open**
+
+- Map size and how it is laid out around the starting area. The starting layout (hub I6) must stay valid, and cell names currently run from column A to P and row 1 to 10 (see API.md, Cells). A larger map needs a rule for columns beyond P.
+- Survey shape, range, cost and duration, and whether it must start next to revealed ground.
+- Whether the map also grows in danger as it is revealed, for example more enemy exposure on the edges.
+- Whether fog is visible and how it is drawn, and whether unrevealed cells can be targeted by commands other than `survey`.
 
 ### Scripting
 
@@ -308,6 +330,8 @@ A goal or mystery (for example a distress signal or an ancient structure) gives 
 
 **Decided.** The rival colony has an **aggression spectrum**: some are ravenous, war-hungry bandits; others focus on science and mostly keep to themselves. Whether it actively attacks and expands during the run or sits passively until struck is tied to this spectrum and not fully specified.
 
+**Decided (2026-10-20).** The rival colony sits on the larger map, far from the hub, and is **hidden until surveyed**. A Conquest run therefore needs a lot of surveying to find it before it can be attacked or absorbed. See "Map expansion and survey".
+
 ### Meta-progression
 
 **Decided.** Vampire Survivors-style permanent unlocks that make future runs stronger and easier. Each run earns a meta-currency based on survival time, happiness and milestones, spent on a between-run screen. Two kinds of unlock **(Proposed)**:
@@ -330,7 +354,7 @@ Text-only play risks fatigue, so small ASCII or GUI visualisations (maps, bars) 
 ### Suggested build order
 
 1. **Slice 1 (done):** layout, ticks, radius rules, basic commands, one economy, explicit wire/pipe, population growth.
-2. **Structures track (planned):** categories, tiers and `upgrade`, compute capacity, the data link and network switch, `research`, multi-cell footprints, Mk3 buildings and the coolant link, then industry and the cargo link. See [`docs/specs/`](specs/README.md). This runs alongside the slices below; the Defense category lands with Slice 2.
+2. **Structures track (planned):** categories, tiers and `upgrade`, compute capacity, the data link and network switch, `research`, multi-cell footprints, Mk3 buildings and the coolant link, the larger map and `survey`, then industry and the cargo link. See [`docs/specs/`](specs/README.md). This runs alongside the slices below; the Defense category lands with Slice 2.
 3. **Slice 2:** one wave type, turrets, simple scripts.
 4. **Slice 3:** happiness consequences, corruption.
 5. **Later:** enemy factions, win paths, meta-progression.
@@ -353,7 +377,9 @@ Work in progress. Nothing here is decided. Each entry records the problem, the o
 | Arrivals keep coming and want more | Pull | Colonists already arrive when there are free beds and happiness is at least 50. Arrival pace could rise over time, or later arrivals could need specific roles or rooms. | Needs a reason the player cannot just refuse arrivals. |
 | Goals and unlocks | Pull | The two win paths (Ascension, Conquest) and meta-progression unlocks only come from growth, so staying put means never winning or unlocking anything. | Needs the win paths to exist first. |
 
-**Related, now decided:** advanced structures unlocked through compute-based research (see "Structures, tiers and compute") are a pull toward growth, since Mk2 and Mk3 need materials and, for Mk3, spare space and a new link. The Industry slice (deposits, mines, cargo) is where finite resources would be tested first; see [`docs/specs/08-industry-and-cargo.md`](specs/08-industry-and-cargo.md).
+**Related, now decided:** advanced structures unlocked through compute-based research (see "Structures, tiers and compute") are a pull toward growth, since Mk2 and Mk3 need materials and, for Mk3, spare space and a new link. The map-and-survey slice ([`docs/specs/08-map-and-survey.md`](specs/08-map-and-survey.md)) gives the colony somewhere to expand to, and the Industry slice (deposits, mines, cargo) is where finite resources are tested first; see [`docs/specs/09-industry-and-cargo.md`](specs/09-industry-and-cargo.md).
+
+**Update 2026-10-20: the expansion question is largely settled.** The colony expands onto a larger map that is revealed through play, using the `survey` command, which spends compute. See "Map expansion and survey" under Planned game design. The option of separate outpost grids is parked, not rejected. The open questions below that this resolves are marked.
 
 **Current leaning (Proposed).** Combine finite local resources with escalating waves, and use the win paths as the reason to care. Finite deposits give a specific, readable reason to expand ("the nearby ore is running out") instead of a vague timer. Waves keep the clock honest. Avoid leaning on upkeep alone.
 
@@ -365,9 +391,9 @@ Work in progress. Nothing here is decided. Each entry records the problem, the o
 
 **Open questions**
 
-- **Where does the colony expand to?** The grid is a fixed 16 by 10. Options: reveal more map over time, or separate outpost grids linked by a command (something like `link`). This decision shapes everything else here, so settle it first.
-- Are deposits depleted by use, by time, or both? Can they be surveyed or prospected with a command?
-- Does a second site need its own hub, or just a reactor and a connection back?
+- **Where does the colony expand to?** *Resolved (2026-10-20): a larger map revealed through `survey`. Separate outpost grids are parked as a later idea.* Original question: the grid is a fixed 16 by 10. Options were: reveal more map over time, or separate outpost grids linked by a command (something like `link`).
+- Are deposits depleted by use, by time, or both? *Partly resolved: they are surveyed with `survey`. Depletion by use is the working assumption; see the Industry spec.*
+- Does a second site need its own hub, or just a reactor and a connection back? *Mostly resolved for now: with one larger map, there is a single hub, and far sites reach it through relays such as network switches. Revisit if outposts return.*
 - How do the status commands show a running-out resource? (`status materials` already forecasts affordability, and could forecast depletion.)
 
 ## Small tasks not built yet
