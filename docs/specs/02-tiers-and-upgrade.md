@@ -53,6 +53,8 @@ Existing constants (`REACTOR_OUTPUT`, `OXYGEN_PIPES`, `OXYGEN_OUTPUT`, `GARDEN_O
 
 The Mk3 step is a new building, and a category may eventually have two Mk3 flavours (an Ascension one and a Conquest one, see DESIGN.md). So the data model should not assume exactly one Mk3 per Mk1 type. The only Mk3 behaviour in this slice is the already-Mk2 message, which should say that Mk3 is a separate building without naming a specific one.
 
+Mk2 rooms will also get a crew staff slot and a staffing bonus in Slice 10. Nothing for that is needed here, but keep the per-tier stat lookup separate from any bonus multiplier so the staff bonus can be applied afterwards without changing the tier table.
+
 ## Interactions to get right
 
 - Upgrading a reactor changes its radius. Links that were out of range may start working, and none should break. The reverse (a downgrade) does not exist.

@@ -81,7 +81,7 @@ Tab completion offers tech names after `research`, and `cancel` plus running tec
 
 ## Design for growth: shared project mechanism
 
-`survey` (Slice 8) will reserve compute capacity for a duration in exactly the way a research project does, and the two compete for the same capacity. Build the reservation, progress, pause-when-capacity-drops and cancel logic as a generic "project" that research is one kind of, instead of hard-coding it to techs. Research stays its own command; no shared `projects` command is needed yet.
+`survey` (Slice 8) will reserve compute capacity for a duration in exactly the way a research project does, and the two compete for the same capacity. Training at an academy (Slice 11) is a third consumer: it reserves academy training slots instead of compute, but needs the same reservation, progress, pause and cancel behaviour, so the mechanism should be generic over **what capacity is reserved**, not only compute. Build the reservation, progress, pause-when-capacity-drops and cancel logic as a generic "project" that research is one kind of, instead of hard-coding it to techs. Research stays its own command; no shared `projects` command is needed yet.
 
 ## Design for growth: exclusive techs
 

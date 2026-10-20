@@ -151,7 +151,7 @@ Everything in this section is the intended direction, agreed in design discussio
 
 ### Colonists
 
-**Decided.** The crew is not fixed. The colony starts with 4 named colonists and grows as the player builds quarters, which is what justifies needing more food, oxygen and power (built). Colonists are mechanically thin for now: abstract, with a name and a role, and their needs roll up into the shared happiness score. This may change later, for example towards individuals with personalities, but not yet.
+**Decided.** The crew is not fixed. The colony starts with 4 named colonists and grows as the player builds quarters, which is what justifies needing more food, oxygen and power (built). Colonists are mechanically thin for now: abstract, with a name and a role, and their needs roll up into the shared happiness score. **Decided 2026-10-20:** crew stay a **pool**, not individuals the player tracks. Names are flavour only, so colonies can grow without limit. Roles now matter, as counts (for example 3 engineers and 2 botanists), through staffing and training. See "Crew, staffing and training" below. Per-person personalities are no longer the plan.
 
 ### Structures, tiers and compute
 
@@ -233,7 +233,7 @@ Early tiers should need at most one new link type each, so typing load stays low
 - **Scope decision (Decided).** The fork roughly doubles the Mk3 content to balance, and the win paths are not built (Conquest is explicitly still open). So the extra Mk1 variants come first, since they enrich the early game, and the Mk3 fork is **held** until the win paths are specced. The Mk3 rooms in the specs (fusion core, data core) are the Ascension-flavour default and must not block adding a Conquest sibling later.
 - The fork needs research to support exclusive techs (a tech that excludes another). See the Research spec.
 
-**Build order for this work (Decided).** Compute first (it enables research and automation and introduces the data link), then the larger map and `survey` (it gives deposits and later the rival colony somewhere to be), then Industry (it gives expansion a reason and introduces the cargo link), then Defense (with Slice 2 and the first wave type; it wants coolant and cargo to exist). The ordered slices, with a footprint slice before the Mk3 buildings, are in [`docs/specs/`](specs/README.md).
+**Build order for this work (Decided).** Compute first (it enables research and automation and introduces the data link), then the larger map and `survey` (it gives deposits and later the rival colony somewhere to be), then Industry (it gives expansion a reason and introduces the cargo link), then Defense (with Slice 2 and the first wave type; it wants coolant and cargo to exist). The ordered slices, with a footprint slice before the Mk3 buildings, are in [`docs/specs/`](specs/README.md). The crew slices (staffing, then the academy) come after tiers and research, since staffing is a Mk2 bonus and training reuses the research reservation mechanism.
 
 ### Map expansion and survey
 
@@ -256,6 +256,44 @@ Agreed in design discussion on 2026-10-20. Nothing here is built. The implementa
 - Survey shape, range, cost and duration, and whether it must start next to revealed ground.
 - Whether the map also grows in danger as it is revealed, for example more enemy exposure on the edges.
 - Whether fog is visible and how it is drawn, and whether unrevealed cells can be targeted by commands other than `survey`.
+
+### Crew, staffing and training
+
+Agreed in design discussion on 2026-10-20. Nothing here is built. The implementation slices are [`docs/specs/10-crew-and-staffing.md`](specs/10-crew-and-staffing.md) and [`docs/specs/11-academy-and-training.md`](specs/11-academy-and-training.md).
+
+**Principle (Decided).** Crew must not become micromanagement in a game that cannot be paused. They are a **pool**, managed by counts and by rules the game applies for the player. Complexity arrives with the structure tiers, so the opening is unchanged and later play has more to do.
+
+**Roles (Decided that roles matter; the mapping is Proposed).** Each colonist has a role, or is a generalist. A few roles matter, each tied to a category, for example: engineer (power, life support), botanist (food), scientist (compute, including research and survey speed), mechanic (industry, maintenance), medic (habitation) and pilot (defense, and later the strike force). Names are flavour only.
+
+**Staffing (Decided: a bonus for Mk2; Proposed: required for Mk3).**
+
+- Mk1 rooms need no staff, so the early game is unchanged.
+- A Mk2 room has a staff slot. A matching-role colonist in the slot gives a bonus on top of the Mk2 stats *(placeholder: +20 percent)*. An empty slot costs nothing.
+- Mk3 rooms **require** staff to run **(Proposed)**.
+- **Auto-assignment by default.** The game fills slots from the pool by role. The player can override with `assign` and `unassign` to pin which rooms are staffed first when crew are scarce. This gives programmers something to script and gives non-programmers nothing to learn.
+- Understaffing is shown where players already look: `rooms`, `inspect`, `status alerts`. Only rooms that **require** staff are flagged; an empty bonus slot is just information.
+
+**Shaping who arrives (Decided that the player needs some control; mechanisms Proposed).**
+
+- **Passive attraction.** The mix of rooms the player has built tilts which roles arrive. Newcomers mostly arrive as generalists. This needs no player input.
+- **Academy and `train`.** An academy room has training slots, a capacity like compute. `train -role <role> [-count <n>] [-location <cell>]` turns generalists into specialists over time. `-location` is optional: with no location the game picks an academy that has free slots and can teach the role. The player never picks an individual or writes a curriculum. Trainees do not work while training, so training has a visible cost (slower income, an unfilled slot). Which roles an academy can teach depends on its tier, and later on its variant (a war college or research institute as Mk1 variants, in line with the variety principle).
+- **Optional:** a `train auto` policy that rebalances toward what the player's rooms need, and script hooks.
+
+**Win paths (Proposed).** Scientists raise research and survey speed (Ascension). The Conquest strike force is drawn from the same crew, trained at the academy (a strike pilot or soldier role), and can be lost in battle. The second part needs the win paths to be specced first.
+
+**Visualizing crew (Decided direction).** The map never acts, but it can show:
+
+- **Pips on rooms:** one per staffed slot, coloured by role, with a hollow pip for an empty slot on a Mk2 room. This is first and cheap.
+- **A richer `crew` command:** a summary by role (count, assigned, idle) and, with a role argument, the names, where each is and what they are doing (working, sleeping, relaxing, idle). Where and doing are derived from the pool, not simulated per person.
+- **`view crew`:** highlights rooms that have staff and shows where idle crew are.
+- **Later polish (Proposed):** small dots that drift between bunk, workplace and lounge, moving in straight lines with no pathfinding, with a red-alert look during waves to carry the tone shift. Purely visual.
+
+**Open**
+
+- Whether a generalist can fill a staff slot at reduced effect, or only a matching role counts.
+- Whether a specialist can be retrained to another role, and at what cost.
+- The fate of the existing role labels that do not map to a category (Cook, Technician).
+- Whether losing crew in a wave hits specialists first or at random.
 
 ### Scripting
 
@@ -354,7 +392,7 @@ Text-only play risks fatigue, so small ASCII or GUI visualisations (maps, bars) 
 ### Suggested build order
 
 1. **Slice 1 (done):** layout, ticks, radius rules, basic commands, one economy, explicit wire/pipe, population growth.
-2. **Structures track (planned):** categories, tiers and `upgrade`, compute capacity, the data link and network switch, `research`, multi-cell footprints, Mk3 buildings and the coolant link, the larger map and `survey`, then industry and the cargo link. See [`docs/specs/`](specs/README.md). This runs alongside the slices below; the Defense category lands with Slice 2.
+2. **Structures track (planned):** categories, tiers and `upgrade`, compute capacity, the data link and network switch, `research`, multi-cell footprints, Mk3 buildings and the coolant link, the larger map and `survey`, then industry and the cargo link, then crew staffing and the academy. See [`docs/specs/`](specs/README.md). This runs alongside the slices below; the Defense category lands with Slice 2.
 3. **Slice 2:** one wave type, turrets, simple scripts.
 4. **Slice 3:** happiness consequences, corruption.
 5. **Later:** enemy factions, win paths, meta-progression.

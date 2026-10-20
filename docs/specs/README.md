@@ -22,6 +22,8 @@ These specs turn the decisions in [DESIGN.md](../DESIGN.md) ("Structures, tiers 
 | 7 | [Mk3 buildings and the coolant link](07-mk3-and-coolant.md) | 2, 5, 6 | Not started |
 | 8 | [Larger map and `survey`](08-map-and-survey.md) | 3, 5 | Not started |
 | 9 | [Industry and the cargo link](09-industry-and-cargo.md) | 5, 8 | Not started |
+| 10 | [Crew pool, roles and staffing](10-crew-and-staffing.md) | 2 | Not started |
+| 11 | [Academy and `train`](11-academy-and-training.md) | 5, 10 | Not started |
 
 Slices 1 and 6 touch different parts of the code and could be done in either order. Defense (turrets) is deliberately not in this track: it lands with Slice 2 of the main build order and needs coolant and cargo links to exist first.
 
@@ -41,5 +43,7 @@ Slices 1 and 6 touch different parts of the code and could be done in either ord
 - **Whether categories ever carry mechanics** (wave targeting, corruption weighting). Not needed by any slice here.
 - **Whether Mk3 consumes or replaces the Mk2** it grows out of. Decided in Slice 7.
 - **The Mk3 fork between win paths** (an Ascension and a Conquest flavour per category, probably exclusive per category). Held until the win paths are specced; see DESIGN.md, "Mk3 fork between the win paths". No slice here implements it, but every slice should avoid assuming exactly one Mk3 per category.
-- **Extra Mk1 variants** (algae vat, scrubber, area turret and so on, see DESIGN.md, "Variety within a category"). Not part of slices 1 to 9; each variant is added after the slice that introduces the link type it needs, and gets its own small spec when it is picked up.
+- **Crew details** (Slices 10 and 11): whether generalists can fill staff slots at reduced effect, retraining specialists, the fate of the Cook and Technician labels, and whether the academy needs a teacher. The principle is settled: crew are a pool managed by counts and by automatic rules (DESIGN.md, "Crew, staffing and training").
+- **Developer-only helpers.** Slices 6 and 11 add test helpers behind a `?dev` flag (a test room and `arrive`). Use one flag for all of them, and keep every helper out of `help`, tab completion and the hint line in normal play.
+- **Extra Mk1 variants** (algae vat, scrubber, area turret and so on, see DESIGN.md, "Variety within a category"). Not part of slices 1 to 11; each variant is added after the slice that introduces the link type it needs, and gets its own small spec when it is picked up.
 - **Whether `demolish` refunds scale with upgrades.** Decided in Slice 2.
