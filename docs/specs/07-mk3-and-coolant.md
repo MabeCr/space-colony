@@ -1,8 +1,8 @@
 # Slice 7: Mk3 buildings and the coolant link
 
-**Goal.** Add the first Mk3 buildings, which are new buildings with a larger boost, a larger footprint and a new link type. This slice introduces coolant and delivers the fusion core and the data core as the first two Mk3 rooms.
+**Goal.** Add the first Mk3 buildings, which are new buildings with a larger boost, a placement rule (next to a Mk2) and a new link type. This slice introduces coolant and delivers the fusion core and the data core as the first two Mk3 rooms.
 
-**Status:** Not started. **Depends on:** Slices 2, 5 and 6.
+**Status:** Not started. **Depends on:** Slices 2 and 5.
 
 ## Scope
 
@@ -29,12 +29,12 @@ unchill -to <consumer>
 
 ## Mk3 buildings
 
-Mk3 buildings are separate room types with their own build entry, gated by research (Slice 5) and by a footprint of 2x2 (Slice 6).
+Mk3 buildings are separate room types with their own build entry, gated by research (Slice 5) and by a placement rule: a Mk3 must be built next to a Mk2 room of the same category (see below). They are 1x1.
 
-| Type | Label | Category | Cost | Power | Footprint | Needs |
+| Type | Label | Category | Cost | Power | Placed next to | Needs |
 |---|---|---|---|---|---|---|
-| `fusion` | Fusion Core | power | 120 *(placeholder)* | 0 | 2x2 | A coolant link |
-| `datacore` | Data Core | compute | 90 *(placeholder)* | 4 | 2x2 | Power, data link and a coolant link |
+| `fusion` | Fusion Core | power | 120 *(placeholder)* | 0 | A Mk2 reactor | A coolant link |
+| `datacore` | Data Core | compute | 90 *(placeholder)* | 4 | A Mk2 compute room (rack or switch) | Power, data link and a coolant link |
 
 Effects *(placeholder)*: the fusion core produces 40 power with radius 6; the data core provides 16 compute capacity.
 
@@ -48,15 +48,17 @@ The fusion core and the data core are the **Ascension-flavour** Mk3 for their ca
 
 This is the central design question. Two options; pick one, then record the choice in DESIGN.md and API.md.
 
-- **Option A: Add-on (default).** The Mk3 is built on empty space, and the Mk2 stays. The player's base keeps both, and the Mk3 is an extra, large building. Simple to implement and to test.
-- **Option B: Replace.** Building the Mk3 requires demolishing, or automatically consumes, a Mk2 of the same category within range, with a refund bonus. It reinforces "leave space and plan ahead" less, but gives a sharper puzzle about layout.
+**Decided 2026-10-20: add-on, with an adjacency rule.** The Mk3 is built on an empty cell **next to a Mk2** room of the same category *(placeholder: any of the 8 surrounding cells; any Mk2 in the category, not only the same type)*, and the Mk2 stays. This makes the Mk3 a placement decision (plan where the Mk2 goes and leave a free cell beside it) without multi-cell footprints, which are parked (Slice 6).
 
-This spec assumes Option A. If Option B is chosen, add a requirement and error: `Needs a Mk2 <type> within <n> cells to replace.`
+- Checked once, when building. If the Mk2 is demolished later, the Mk3 keeps working *(placeholder)*.
+- Refused with: `A Mk3 <label> must be built next to a Mk2 <category> room. None is next to <cell>.`
+- The build ghost does not check this, like it does not check cost or wiring today.
+- A radiator (Mk1) does not count as the Mk2 for any Mk3.
 
 ## Behaviour
 
 - `build power` and `build compute` list the Mk3 types with their research lock and cost.
-- Building a Mk3 shows the 2x2 ghost. The usual warning lists what is missing: wire (for the data core), net (for the data core), and chill (for both). Example: `Not cooled yet: chill -from <radiator> -to <cell>`.
+- Building a Mk3 shows the usual ghost. The usual warning lists what is missing: wire (for the data core), net (for the data core), and chill (for both). Example: `Not cooled yet: chill -from <radiator> -to <cell>`.
 - A cooled fusion core adds its power to the same reactor system as other reactors: `wire` from it works, `status power` includes it, and `inspect` shows load and radius. Treat it as a reactor with a larger output and radius. It should show as a reactor for `view reactor`.
 - A data core adds capacity to the compute total when powered, networked and cooled.
 - `status` and `status alerts` report overheating and not-cooled Mk3 rooms.
@@ -65,20 +67,20 @@ This spec assumes Option A. If Option B is chosen, add a requirement and error: 
 
 1. Start a game and research `mk2-reactor`, then `mk3-fusion` (Slice 5). Let both finish.
 2. `build power` lists the radiator and the fusion core. `build fusion -l d3` is refused unless you have enough materials; wait or reduce costs while testing.
-3. Build a radiator near the reactor and wire it. Build a fusion core on a free 2x2 area. You are warned it is not cooled.
+3. Build a radiator near the reactor and wire it. Build a fusion core on a free cell next to the Mk2 reactor. You are warned it is not cooled.
 4. `rooms` shows the fusion core as `NOT COOLED`. `status power` shows no extra supply from it yet.
 5. `chill -f <radiator> -t <fusion>`. The flag clears. `status power` supply rises by the fusion core's output. `inspect` shows radius 6 on the map.
 6. Wire a room beyond the original reactor's radius to the fusion core, then confirm it is powered. Confirm `view reactor` highlights the fusion core.
 7. Fill the radiator's three slots with consumers; the fourth is refused with a no-free-slots message.
 8. `unwire` the radiator. The fusion core reports `OVERHEATING` and stops producing. Rewire it to recover.
 9. Build the data core, wire it, net it, chill it. Compute capacity rises by its amount. Break each of the three links in turn and confirm the right flag appears and the capacity falls.
-10. Try building a 2x2 Mk3 on a spot with only a 1x2 gap: the ghost shows red and the build is refused.
+10. Try building a Mk3 on a free cell that is not next to a Mk2 of its category: the build is refused with the adjacency message. Build one diagonally next to the Mk2: it works.
 11. `demolish` a Mk3. The refund is half the cost; links to it drop on the next recompute.
 12. `npm run typecheck` passes.
 
 ## Open questions
 
-- Add-on or replace (see above).
+- Adjacency details: 4 or 8 neighbours, same type or same category, and what happens if the Mk2 is demolished afterwards.
 - The final coolant verb names.
 - Should an overheating room eventually take damage or shut down permanently? Not in this slice.
 - Where does coolant live on the Mk3 side of other categories (atmosphere processor, bio-dome)? Left for later slices.

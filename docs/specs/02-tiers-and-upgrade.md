@@ -33,7 +33,7 @@ Out of scope: Mk3 (Slice 7), research gating (Slice 5), new link types. In this 
 
 **Errors** follow the existing style: missing `-location`, invalid cell, `Nothing is built at <cell>.`, hub, already Mk2, not enough materials.
 
-**Display.** `rooms`, `inspect` and the map show the tier (for example `Reactor Mk2`). Mk1 may omit the suffix. The map should show Mk2 in a way that is visible at a glance, such as a small pip. Exact styling is up to the implementer.
+**Display.** `rooms`, `inspect` and the map show the tier (for example `Reactor Mk2`). Mk1 may omit the suffix. On the map, Mk2 is a **second, inner border** inside the room's normal border, visible at a glance even at the fit-everything zoom. Do not use pips for the tier: pips are reserved for staff slots (Slice 10). The hover label also says Mk2.
 
 ## Mk2 numbers (placeholder)
 
@@ -60,7 +60,9 @@ Mk2 rooms will also get a crew staff slot and a staffing bonus in Slice 10. Noth
 - Upgrading a reactor changes its radius. Links that were out of range may start working, and none should break. The reverse (a downgrade) does not exist.
 - A reactor upgrade that adds capacity can fix an overloaded reactor. `status power` and `status alerts` must reflect it on the next tick.
 - Upgrading quarters adds a bed. Housing assignment (hub 4, then each working quarters) must use the room's capacity.
-- `demolish` refunds half the **build** cost for now. Whether the refund should include the upgrade spend is **Open**. Leave it as is and note the choice.
+- **`demolish` refunds half of everything spent on the room** (build cost plus the upgrade cost, if upgraded), rounded down. No new state is needed: the amount follows from the room's tier.
+- **A broken room can be upgraded.** The upgrade works and is paid for, but the room is still broken until it is repaired (wired, powered, in range). After a successful upgrade of a room that is not working, print a warning saying so.
+- **Upgrades that raise power draw** (the oxygen plant and garden at Mk2): if the room is currently powered and its reactor lacks the spare power for the extra draw, refuse, as `wire` does: `Reactor at <cell> has <n> spare power, and the upgrade needs <m> more. Build another reactor or upgrade this one.` If the room is not currently powered, the upgrade goes ahead with the warning above.
 - Wire and pipe previews and radius rings use the current tier's radius.
 - Autofill: `upgrade` takes `-location` like `build`. Shift+Enter fills `-location` for `upgrade`. Add it to the autofill table in API.md.
 
@@ -75,13 +77,12 @@ Mk2 rooms will also get a crew staff slot and a staffing bonus in Slice 10. Noth
 7. Upgrade the oxygen plant. `inspect j6` shows the higher pipe limit. Pipe a fifth quarters to it; it works.
 8. Try `upgrade -l h6` again. You get the already-Mk2 message.
 9. Try `upgrade -l i6` (the hub). You get a clear refusal. Try `upgrade -l a1` (empty). You get `Nothing is built at a1.`
-10. `demolish` an upgraded room. It refunds half the build cost (not the upgrade). Wires and pipes from it drop as before.
+10. `demolish` an upgraded room. It refunds half of build plus upgrade cost, rounded down. Wires and pipes from it drop as before.
+10a. Overload a reactor so a garden on it has no spare power, then `upgrade` that garden: it is refused with the spare-power message. `unwire` the garden and upgrade it: it succeeds with a warning that it is still not working.
 11. Type `upgrade -l ` and press Shift+Enter with a cell selected. The cell is filled in. Check the preview line.
 12. `rooms` and `view reactor` still work and show the tier.
 13. `npm run typecheck` passes.
 
 ## Open questions
 
-- Does `demolish` refund the upgrade spend?
-- Should the tier be shown on the map as a pip, a number or a colour change?
-- Should upgrading require the room to be working, or may a broken room be upgraded?
+None open. Decided 2026-10-20: refund half of everything spent; inner border on the map; broken rooms can be upgraded but stay broken; power-raising upgrades are refused when the reactor lacks spare. Revisit the broken-room rule if play shows it is unfair.

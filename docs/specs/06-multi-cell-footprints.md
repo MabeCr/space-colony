@@ -2,7 +2,7 @@
 
 **Goal.** Let a room occupy more than one cell. This is the groundwork for Mk3 buildings, which are proposed to be 2x2 so that a player who leaves spare room is rewarded. This slice changes how the grid works and ships no new gameplay room.
 
-**Status:** Not started. **Depends on:** none. Do this before Slice 7.
+**Status:** **Parked (2026-10-20).** Mk3 buildings are 1x1 and use an adjacency rule (Slice 7), so nothing needs this. Kept for reference in case Mk3 needs more weight later. **Depends on:** none.
 
 ## Why a separate slice
 
