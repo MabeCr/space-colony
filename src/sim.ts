@@ -3,8 +3,20 @@ export const ROWS = 10;
 
 export type RoomType = 'hub' | 'reactor' | 'oxygen' | 'garden' | 'quarters' | 'lounge';
 
+/** Filing and browsing groups for room types. Never changes how a room is built. */
+export type Category = 'power' | 'life' | 'food' | 'habitat' | 'industry' | 'compute' | 'defense' | 'maint';
+
+/** Typed names, in display order. They must not collide with a room type name. */
+export const CATEGORY_ORDER: Category[] = ['power', 'life', 'food', 'habitat', 'industry', 'compute', 'defense', 'maint'];
+
+export const CATEGORY_LABELS: Record<Category, string> = {
+  power: 'Power', life: 'Life support', food: 'Food', habitat: 'Habitation', industry: 'Industry', compute: 'Compute', defense: 'Defense', maint: 'Maintenance',
+};
+
 export interface RoomDef {
   label: string;
+  /** Null for rooms that are never listed for building (the hub). */
+  category: Category | null;
   color: string;
   cost: number;
   /** Power drawn per tick (0 for none). */
@@ -15,15 +27,22 @@ export interface RoomDef {
 }
 
 export const ROOM_DEFS: Record<RoomType, RoomDef> = {
-  hub: { label: 'Command Hub', color: '#7aa2f7', cost: 0, draw: 0, radius: 0, desc: 'Your starting room. Houses 4 colonists on emergency cots.' },
-  reactor: { label: 'Reactor', color: '#f7b955', cost: 40, draw: 0, radius: 4, desc: 'Produces 12 power. Use "wire" to connect it to rooms within its radius.' },
-  oxygen: { label: 'Oxygen Plant', color: '#5ad1e6', cost: 30, draw: 3, radius: 4, desc: 'Needs power. Use "pipe" to send air to up to 4 quarters within its radius.' },
-  garden: { label: 'Hydroponics', color: '#7ad97a', cost: 25, draw: 2, radius: 0, desc: 'Needs power. Grows 2 food per tick.' },
-  quarters: { label: 'Quarters', color: '#c19cf5', cost: 20, draw: 1, radius: 0, desc: 'Needs a power wire and an air pipe. Houses 2 colonists, and draws new arrivals.' },
-  lounge: { label: 'Lounge', color: '#f58cb4', cost: 30, draw: 2, radius: 3, desc: 'Needs power. Quarters within its radius get a happiness boost.' },
+  hub: { category: null, label: 'Command Hub', color: '#7aa2f7', cost: 0, draw: 0, radius: 0, desc: 'Your starting room. Houses 4 colonists on emergency cots.' },
+  reactor: { category: 'power', label: 'Reactor', color: '#f7b955', cost: 40, draw: 0, radius: 4, desc: 'Produces 12 power. Use "wire" to connect it to rooms within its radius.' },
+  oxygen: { category: 'life', label: 'Oxygen Plant', color: '#5ad1e6', cost: 30, draw: 3, radius: 4, desc: 'Needs power. Use "pipe" to send air to up to 4 quarters within its radius.' },
+  garden: { category: 'food', label: 'Hydroponics', color: '#7ad97a', cost: 25, draw: 2, radius: 0, desc: 'Needs power. Grows 2 food per tick.' },
+  quarters: { category: 'habitat', label: 'Quarters', color: '#c19cf5', cost: 20, draw: 1, radius: 0, desc: 'Needs a power wire and an air pipe. Houses 2 colonists, and draws new arrivals.' },
+  lounge: { category: 'habitat', label: 'Lounge', color: '#f58cb4', cost: 30, draw: 2, radius: 3, desc: 'Needs power. Quarters within its radius get a happiness boost.' },
 };
 
 export const BUILDABLE: RoomType[] = ['reactor', 'oxygen', 'garden', 'quarters', 'lounge'];
+
+/** Buildable room types in a category, in build order. */
+export const typesIn = (c: Category): RoomType[] => BUILDABLE.filter((t) => ROOM_DEFS[t].category === c);
+
+for (const c of CATEGORY_ORDER) {
+  if (c in ROOM_DEFS) throw new Error(`Category "${c}" collides with a room type name.`);
+}
 
 export const REACTOR_OUTPUT = 12;
 export const OXYGEN_PIPES = 4;

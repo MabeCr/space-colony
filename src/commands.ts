@@ -38,6 +38,8 @@ interface Args {
 interface Command {
   usage: string;
   summary: string;
+  /** What the command does to the colony: changes it, reads it, or only changes the view or terminal. */
+  tag: 'action' | 'query' | 'ui';
   /** Flags this command understands, with a short description of their value. */
   flags?: Record<string, string>;
   run: (s: State, a: Args) => CommandResult;
@@ -197,7 +199,7 @@ function stockReport(title: string, key: 'oxygen' | 'food', unitLabel: string, m
   };
 }
 
-const CATEGORIES: Record<string, Report> = {
+const STATUS_REPORTS: Record<string, Report> = {
   power: (s, w) => {
     const reactors = s.rooms.filter((r) => r.type === 'reactor');
     const top = Math.max(...w.map((x) => Math.max(x.powerDemand, x.powerSupply)), 1);
@@ -280,10 +282,11 @@ const CATEGORIES: Record<string, Report> = {
 };
 
 /** Everything `status` accepts as its first argument. */
-const STATUS_VIEWS = [...Object.keys(CATEGORIES), 'alerts'];
+const STATUS_VIEWS = [...Object.keys(STATUS_REPORTS), 'alerts'];
 
 export const COMMANDS: Record<string, Command> = {
   help: {
+    tag: 'query',
     usage: 'help [command]',
     summary: 'List commands, or explain one.',
     run: (_s, { pos: [name] }) => {
@@ -297,6 +300,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   status: {
+    tag: 'query',
     usage: `status [${STATUS_VIEWS.join(' | ')}] [-time <ticks>]`,
     summary: 'Colony overview, "alerts" for everything wrong, or a graph and diagnosis of one category over the last 30 ticks.',
     flags: { '-time': `How many ticks of history to graph (2-${HISTORY_CAP}, default ${DEFAULT_WINDOW}).` },
@@ -304,7 +308,7 @@ export const COMMANDS: Record<string, Command> = {
       const name = a.pos[0];
       if (name === 'alerts') return { lines: alerts(s) };
       if (name) {
-        const report = Object.hasOwn(CATEGORIES, name) ? CATEGORIES[name] : undefined;
+        const report = Object.hasOwn(STATUS_REPORTS, name) ? STATUS_REPORTS[name] : undefined;
         if (!report) return err(`Unknown status option "${name}". Options: ${STATUS_VIEWS.join(', ')}.`);
         const raw = a.flags['-time'];
         const asked = raw === undefined ? DEFAULT_WINDOW : Number(raw);
@@ -329,6 +333,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   build: {
+    tag: 'action',
     usage: 'build <type> -location <cell>   e.g. build reactor -location B4',
     summary: `Construct a room. Types: ${BUILDABLE.join(', ')}.`,
     flags: { '-location': 'Cell to build on (alias -loc, -l).' },
@@ -353,6 +358,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   wire: {
+    tag: 'action',
     usage: 'wire -from <reactor> -to <room>',
     summary: 'Run a power line from a reactor to a room within its radius.',
     flags: { '-from': 'Reactor cell (alias -f).', '-to': 'Room that needs power (alias -t).' },
@@ -375,6 +381,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   unwire: {
+    tag: 'action',
     usage: 'unwire -to <room>',
     summary: 'Cut the power line to a room.',
     flags: { '-to': 'Room to disconnect (alias -t).' },
@@ -388,6 +395,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   pipe: {
+    tag: 'action',
     usage: 'pipe -from <oxygen plant> -to <quarters>',
     summary: `Pipe air from an oxygen plant to quarters within its radius (max ${OXYGEN_PIPES} per plant).`,
     flags: { '-from': 'Oxygen plant cell (alias -f).', '-to': 'Quarters cell (alias -t).' },
@@ -409,6 +417,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   unpipe: {
+    tag: 'action',
     usage: 'unpipe -to <quarters>',
     summary: 'Cut the air pipe to quarters.',
     flags: { '-to': 'Room to disconnect (alias -t).' },
@@ -422,6 +431,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   demolish: {
+    tag: 'action',
     usage: 'demolish -location <cell>',
     summary: 'Tear down a room for a 50% refund.',
     flags: { '-location': 'Cell to clear (alias -loc, -l).' },
@@ -437,6 +447,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   inspect: {
+    tag: 'query',
     usage: 'inspect -location <cell> | inspect reset',
     summary: 'Details about a room, and its range and connections on the map. "reset" clears the highlight.',
     flags: { '-location': 'Cell to examine (alias -loc, -l).' },
@@ -470,6 +481,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   rooms: {
+    tag: 'query',
     usage: 'rooms',
     summary: 'List every room and whether it is working.',
     run: (s) => ({
@@ -481,6 +493,7 @@ export const COMMANDS: Record<string, Command> = {
     }),
   },
   crew: {
+    tag: 'query',
     usage: 'crew',
     summary: 'Who is in the colony, and who has a bunk.',
     run: (s) => ({
@@ -491,6 +504,7 @@ export const COMMANDS: Record<string, Command> = {
     }),
   },
   speed: {
+    tag: 'ui',
     usage: 'speed <1 | 1/2 | 1/4>',
     summary: 'Slow time down. There is no pause.',
     run: (s, { pos: [v] }) => {
@@ -501,6 +515,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   view: {
+    tag: 'ui',
     usage: 'view zoom <in|out> [steps] | view pan <up|down|left|right> [cells] | view <room type> | view reset',
     summary: 'Zoom, pan, or highlight the map. "reset" restores the full view and clears any highlight.',
     run: (s, { pos: [sub, a, b] }) => {
@@ -535,6 +550,7 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
   clear: {
+    tag: 'ui',
     usage: 'clear',
     summary: 'Clear the terminal.',
     run: () => ({ lines: [], clear: true }),
