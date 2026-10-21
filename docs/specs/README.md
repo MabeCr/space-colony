@@ -14,7 +14,7 @@ These specs turn the decisions in [DESIGN.md](../DESIGN.md) (structures, tiers a
 | # | Slice | Depends on | Status |
 |---|---|---|---|
 | 1 | [Categories](01-categories.md) | none | Done |
-| 2 | [Tiers and `upgrade`](02-tiers-and-upgrade.md) | 1 | Built, pending in-browser check |
+| 2 | [Tiers and `upgrade`](02-tiers-and-upgrade.md) | 1 | Done |
 | 3 | [Compute capacity](03-compute-capacity.md) | 1 | Not started |
 | 4 | [Data link and network switch](04-data-link-and-switch.md) | 3 | Not started |
 | 5 | [`research`](05-research.md) | 2, 3, 4 | Not started |

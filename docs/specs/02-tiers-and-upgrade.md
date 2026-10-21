@@ -2,7 +2,7 @@
 
 **Goal.** Give rooms a tier and let the player upgrade Mk1 to Mk2 in place with a command. This keeps the player's opening base design useful.
 
-**Status:** Built. Automated checks: `npm run smoke`. The browser checklist below, including the map border, is still to run. **Depends on:** Slice 1.
+**Status:** Done. Automated checks: `npm run smoke`; the browser checklist was run by hand. **Depends on:** Slice 1.
 
 ## Scope
 
