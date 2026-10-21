@@ -50,7 +50,8 @@ This is the central design question. Two options; pick one, then record the choi
 
 **Decided 2026-10-20: add-on, with an adjacency rule.** The Mk3 is built on an empty cell **next to a Mk2** room of the same category *(placeholder: any of the 8 surrounding cells; any Mk2 in the category, not only the same type)*, and the Mk2 stays. This makes the Mk3 a placement decision (plan where the Mk2 goes and leave a free cell beside it) without multi-cell footprints, which are parked (Slice 6).
 
-- Checked once, when building. If the Mk2 is demolished later, the Mk3 keeps working *(placeholder)*.
+- **The Mk2 is a standing requirement, not only a build check.** The rule is checked when building, and every tick after. If the Mk2 next to a Mk3 is demolished, the Mk3 **stops working** until a Mk2 of its category is next to it again. This works like a broken link: the Mk3 stays built and shows a flag (`NO HOST`, placeholder), produces nothing, and keeps its wires, coolant and data links. A log line says which Mk3 went offline and why.
+- `demolish` on a Mk2 that hosts a Mk3 still works, but the output warns: `This Mk2 hosts the Fusion Core at <cell>, which will stop working.` (it is not a confirmation prompt; time cannot be paused).
 - Refused with: `A Mk3 <label> must be built next to a Mk2 <category> room. None is next to <cell>.`
 - The build ghost does not check this, like it does not check cost or wiring today.
 - A radiator (Mk1) does not count as the Mk2 for any Mk3.
@@ -76,11 +77,14 @@ This is the central design question. Two options; pick one, then record the choi
 9. Build the data core, wire it, net it, chill it. Compute capacity rises by its amount. Break each of the three links in turn and confirm the right flag appears and the capacity falls.
 10. Try building a Mk3 on a free cell that is not next to a Mk2 of its category: the build is refused with the adjacency message. Build one diagonally next to the Mk2: it works.
 11. `demolish` a Mk3. The refund is half the cost; links to it drop on the next recompute.
+11a. With a working Mk3 next to its only Mk2, `demolish` the Mk2. The output warns that the Mk3 will stop. The Mk3 shows `NO HOST`, stops producing (power supply or compute capacity falls), and a log line explains it. Its wires and links stay recorded. Build another Mk2 of the category next to it: it resumes.
 12. `npm run typecheck` passes.
 
 ## Open questions
 
-- Adjacency details: 4 or 8 neighbours, same type or same category, and what happens if the Mk2 is demolished afterwards.
+- Adjacency details: 4 or 8 neighbours, and same type or same category.
+- Whether one Mk2 can host several Mk3 rooms at once, or only one. Default: several, since the Mk2 only has to be next to each.
+- Whether the hosting Mk2 must itself be working (powered, in range), or only standing. Default: only standing.
 - The final coolant verb names.
 - Should an overheating room eventually take damage or shut down permanently? Not in this slice.
 - Where does coolant live on the Mk3 side of other categories (atmosphere processor, bio-dome)? Left for later slices.
