@@ -1,4 +1,4 @@
-import { COLS, ROOM_DEFS, ROWS, coord, dist, needsPower, roomAt, roomById, type RoomType, type State } from './sim';
+import { COLS, ROOM_DEFS, ROWS, coord, dist, nameOf, needsPower, roomAt, roomById, statsOf, type RoomType, type State } from './sim';
 
 export interface View {
   selected: { x: number; y: number } | null;
@@ -163,7 +163,7 @@ export class Renderer {
     const ghostAt = v.ghost ? v.ghost.at ?? v.hover : null;
     const ghostOpen = !!ghostAt && !roomAt(s, ghostAt.x, ghostAt.y);
     if (v.ghost && ghostAt && ghostOpen) this.ring(ghostAt.x, ghostAt.y, ROOM_DEFS[v.ghost.type].radius, ROOM_DEFS[v.ghost.type].color);
-    else if (focusRoom && ROOM_DEFS[focusRoom.type].radius) this.ring(focusRoom.x, focusRoom.y, ROOM_DEFS[focusRoom.type].radius, ROOM_DEFS[focusRoom.type].color);
+    else if (focusRoom && statsOf(focusRoom).radius) this.ring(focusRoom.x, focusRoom.y, statsOf(focusRoom).radius, ROOM_DEFS[focusRoom.type].color);
 
     // Wires (amber) and pipes (cyan). Working links animate; broken ones are dim red.
     // With a focused room, its own links and their far ends stay lit; the rest dims.
@@ -218,7 +218,7 @@ export class Renderer {
       const y = oy + r.y * cell + 3;
       const sz = cell - 6;
       const base = (fr ? lit.has(r.id) : !v.highlight || v.highlight.includes(r.type)) ? 1 : DIM;
-      this.tile(r.type, r.x, r.y, (dead ? 0.55 : 1) * base, dead ? `rgba(255, 90, 90, ${0.5 + 0.5 * pulse})` : def.color, t, !dead);
+      this.tile(r.type, r.x, r.y, (dead ? 0.55 : 1) * base, dead ? `rgba(255, 90, 90, ${0.5 + 0.5 * pulse})` : def.color, t, !dead, r.tier);
       ctx.globalAlpha = base;
       // Badges for what's missing: a bolt for power, a droplet for air.
       let bx = x + sz - 7;
@@ -236,7 +236,7 @@ export class Renderer {
       this.box(v.hover.x, v.hover.y, '#7aa2f7', 0.7);
       ctx.fillStyle = 'rgba(8, 10, 20, 0.85)';
       const room = roomAt(s, v.hover.x, v.hover.y);
-      const label = `${coord(v.hover.x, v.hover.y)}${room ? ' ' + ROOM_DEFS[room.type].label : ''}`;
+      const label = `${coord(v.hover.x, v.hover.y)}${room ? ' ' + nameOf(room) : ''}`;
       ctx.font = '12px ui-monospace, Consolas, monospace';
       const tw = ctx.measureText(label).width + 12;
       const [cx, cy] = this.center(v.hover.x, v.hover.y);
@@ -248,7 +248,7 @@ export class Renderer {
   }
 
   /** A room's rounded tile and icon at a cell, drawn at the given opacity. Leaves globalAlpha changed. */
-  private tile(type: RoomType, cx: number, cy: number, alpha: number, stroke: string, t: number, active: boolean): void {
+  private tile(type: RoomType, cx: number, cy: number, alpha: number, stroke: string, t: number, active: boolean, tier = 1): void {
     const { ctx } = this;
     const { cell, ox, oy } = this.geo;
     const x = ox + cx * cell + 3;
@@ -262,6 +262,12 @@ export class Renderer {
     roundRect(ctx, x, y, sz, sz, 6);
     ctx.fill();
     ctx.stroke();
+    // Mk2 and above: a second border inside the first.
+    if (tier > 1) {
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, x + 3.5, y + 3.5, sz - 7, sz - 7, 3);
+      ctx.stroke();
+    }
     ctx.save();
     ctx.translate(x + sz / 2, y + sz / 2);
     drawIcon(ctx, type, sz * 0.36, color, t, active);

@@ -6,7 +6,7 @@ These specs turn the decisions in [DESIGN.md](../DESIGN.md) (structures, tiers a
 
 1. Read DESIGN.md first. The specs assume its decisions and do not repeat the reasoning.
 2. Implement one slice per branch and pull request, in order. A slice only depends on the slices before it.
-3. Run `npm run typecheck`, then work through the slice's **Human test checklist** in the running game (`npm run dev`).
+3. Run `npm run typecheck` and `npm run smoke` (headless checks of the commands and simulation; add to `scripts/smoke.ts` with each slice), then work through the slice's **Human test checklist** in the running game (`npm run dev`).
 4. When the slice ships, change its status below and update DESIGN.md and API.md in the same PR. Mark anything that changed during implementation.
 
 ## Status
@@ -14,7 +14,7 @@ These specs turn the decisions in [DESIGN.md](../DESIGN.md) (structures, tiers a
 | # | Slice | Depends on | Status |
 |---|---|---|---|
 | 1 | [Categories](01-categories.md) | none | Done |
-| 2 | [Tiers and `upgrade`](02-tiers-and-upgrade.md) | 1 | Not started |
+| 2 | [Tiers and `upgrade`](02-tiers-and-upgrade.md) | 1 | Built, pending in-browser check |
 | 3 | [Compute capacity](03-compute-capacity.md) | 1 | Not started |
 | 4 | [Data link and network switch](04-data-link-and-switch.md) | 3 | Not started |
 | 5 | [`research`](05-research.md) | 2, 3, 4 | Not started |

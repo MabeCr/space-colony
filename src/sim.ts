@@ -44,16 +44,73 @@ for (const c of CATEGORY_ORDER) {
   if (c in ROOM_DEFS) throw new Error(`Category "${c}" collides with a room type name.`);
 }
 
-export const REACTOR_OUTPUT = 12;
-export const OXYGEN_PIPES = 4;
-export const OXYGEN_OUTPUT = 3;
-export const GARDEN_OUTPUT = 2;
+/** Tiers a room can reach with `upgrade`. Mk3 is a separate building, not a tier. */
+export const MAX_TIER = 2;
+
+/** Everything that changes with a room's tier. A field is 0 when a room has no such property. */
+export interface TierStats {
+  /** Power drawn per tick. */
+  draw: number;
+  /** Radius (in cells) of the room's area of effect. */
+  radius: number;
+  /** Reactor: power produced. Oxygen plant: oxygen per tick. Hydroponics: food per tick. */
+  output: number;
+  /** Oxygen plant: how many quarters it can pipe to. */
+  pipes: number;
+  /** Quarters: beds. */
+  beds: number;
+}
+
+/** Mk1 values that are not already in ROOM_DEFS. */
+const MK1_EXTRA: Partial<Record<RoomType, Partial<TierStats>>> = {
+  reactor: { output: 12 },
+  oxygen: { output: 3, pipes: 4 },
+  garden: { output: 2 },
+  quarters: { beds: 2 },
+};
+
+/** What an upgrade to Mk2 changes (placeholder numbers). Anything not listed stays as it was. */
+const MK2_CHANGES: Partial<Record<RoomType, Partial<TierStats>>> = {
+  reactor: { output: 18, radius: 5 },
+  oxygen: { pipes: 6, output: 4, draw: 4 },
+  garden: { output: 3, draw: 3 },
+  quarters: { beds: 3 },
+  lounge: { radius: 4 },
+};
+
+/** Materials to upgrade from Mk1 to Mk2 (placeholder). Types without an entry cannot be upgraded. */
+export const UPGRADE_COST: Partial<Record<RoomType, number>> = { reactor: 25, oxygen: 20, garden: 15, quarters: 12, lounge: 18 };
+
+const statsFor = (type: RoomType, tier: number): TierStats => ({
+  draw: ROOM_DEFS[type].draw,
+  radius: ROOM_DEFS[type].radius,
+  output: 0,
+  pipes: 0,
+  beds: 0,
+  ...MK1_EXTRA[type],
+  ...(tier >= 2 ? MK2_CHANGES[type] : undefined),
+});
+
+/** Stats of a room at its current tier. Staffing bonuses (a later slice) belong on top of this, not in it. */
+export const statsOf = (r: { type: RoomType; tier: number }): TierStats => statsFor(r.type, r.tier);
+
+/** Stats of a room type at a tier, for listings that have no room yet. */
+export const statsAt = statsFor;
+
+/** "Reactor", or "Reactor Mk2" once upgraded. Mk1 omits the suffix. */
+export const nameOf = (r: { type: RoomType; tier: number }): string => ROOM_DEFS[r.type].label + (r.tier > 1 ? ` Mk${r.tier}` : '');
+
+/** Total materials spent on a room: its build cost plus the upgrade, if it has one. */
+export const spentOn = (r: { type: RoomType; tier: number }): number => ROOM_DEFS[r.type].cost + (r.tier > 1 ? UPGRADE_COST[r.type] ?? 0 : 0);
+
+/** Demolishing refunds half of everything spent on the room, rounded down. */
+export const refundFor = (r: { type: RoomType; tier: number }): number => Math.floor(spentOn(r) / 2);
+
 export const COLONIST_O2 = 0.5;
 export const COLONIST_FOOD = 0.3;
 export const MATERIAL_PER_COLONIST = 0.5;
 export const STOCK_CAP = 100;
 export const HUB_CAPACITY = 4;
-export const QUARTERS_CAPACITY = 2;
 export const ARRIVAL_TICKS = 15;
 const NAMES = ['Abara', 'Bishop', 'Castellan', 'Dunmore', 'Esperanza', 'Fenwick', 'Gallo', 'Hartigan', 'Ilves', 'Jovanovic', 'Kaito', 'Lumley', 'Moreau', 'Nakamura', 'Orlov', 'Pemberton', 'Quill', 'Rasmussen', 'Soto', 'Thackeray', 'Umar', 'Vance', 'Wren', 'Xiang', 'Yilmaz', 'Zeller'];
 const ROLES = ['Engineer', 'Medic', 'Botanist', 'Pilot', 'Cook', 'Technician', 'Mechanic', 'Scientist'];
@@ -61,6 +118,8 @@ const ROLES = ['Engineer', 'Medic', 'Botanist', 'Pilot', 'Cook', 'Technician', '
 export interface Room {
   id: number;
   type: RoomType;
+  /** 1 for Mk1, 2 for Mk2. */
+  tier: number;
   x: number;
   y: number;
   /** Reactor this room has been wired to (the link persists even if it stops working). */
@@ -176,14 +235,14 @@ function record(s: State): void {
 }
 
 export function addRoom(s: State, type: RoomType, x: number, y: number): Room {
-  const r: Room = { id: s.nextId++, type, x, y, powerFrom: null, airFrom: null, powered: type === 'reactor' || type === 'hub', breathable: false, loungeCount: 0 };
+  const r: Room = { id: s.nextId++, type, tier: 1, x, y, powerFrom: null, airFrom: null, powered: type === 'reactor' || type === 'hub', breathable: false, loungeCount: 0 };
   s.rooms.push(r);
   return r;
 }
 
 /** Power currently drawn from a reactor by rooms wired to it and working. */
 export function reactorLoad(s: State, reactorId: number): number {
-  return s.rooms.filter((r) => r.powerFrom === reactorId && r.powered).reduce((n, r) => n + ROOM_DEFS[r.type].draw, 0);
+  return s.rooms.filter((r) => r.powerFrom === reactorId && r.powered).reduce((n, r) => n + statsOf(r).draw, 0);
 }
 
 /** Number of quarters currently receiving air from an oxygen plant. */
@@ -199,17 +258,17 @@ export function recompute(s: State): void {
 
   for (const r of s.rooms) {
     if (!needsPower(r.type)) continue;
-    const draw = ROOM_DEFS[r.type].draw;
+    const draw = statsOf(r).draw;
     demand += draw;
     r.powered = false;
     const src = reactors.find((x) => x.id === r.powerFrom);
     if (!src) { r.powerFrom = null; continue; }
-    if (dist(r, src) > ROOM_DEFS.reactor.radius) continue;
-    if ((load.get(src.id) ?? 0) + draw > REACTOR_OUTPUT) continue;
+    if (dist(r, src) > statsOf(src).radius) continue;
+    if ((load.get(src.id) ?? 0) + draw > statsOf(src).output) continue;
     load.set(src.id, (load.get(src.id) ?? 0) + draw);
     r.powered = true;
   }
-  s.powerSupply = reactors.length * REACTOR_OUTPUT;
+  s.powerSupply = reactors.reduce((n, x) => n + statsOf(x).output, 0);
   s.powerDemand = demand;
 
   const pipes = new Map<number, number>();
@@ -222,12 +281,12 @@ export function recompute(s: State): void {
       r.breathable = false;
       const plant = s.rooms.find((x) => x.type === 'oxygen' && x.id === r.airFrom);
       if (!plant) r.airFrom = null;
-      else if (plant.powered && dist(r, plant) <= ROOM_DEFS.oxygen.radius && (pipes.get(plant.id) ?? 0) < OXYGEN_PIPES) {
+      else if (plant.powered && dist(r, plant) <= statsOf(plant).radius && (pipes.get(plant.id) ?? 0) < statsOf(plant).pipes) {
         pipes.set(plant.id, (pipes.get(plant.id) ?? 0) + 1);
         r.breathable = true;
       }
     }
-    r.loungeCount = lounges.filter((f) => dist(r, f) <= ROOM_DEFS.lounge.radius).length;
+    r.loungeCount = lounges.filter((f) => dist(r, f) <= statsOf(f).radius).length;
   }
 }
 
@@ -235,7 +294,7 @@ export function housingSlots(s: State): Room[] {
   const slots: Room[] = [];
   for (const r of s.rooms) {
     if (r.type === 'hub') for (let i = 0; i < HUB_CAPACITY; i++) slots.push(r);
-    else if (r.type === 'quarters' && r.powered && r.breathable) for (let i = 0; i < QUARTERS_CAPACITY; i++) slots.push(r);
+    else if (r.type === 'quarters' && r.powered && r.breathable) for (let i = 0; i < statsOf(r).beds; i++) slots.push(r);
   }
   return slots;
 }
@@ -256,7 +315,7 @@ export function step(s: State): LogLine[] {
   recompute(s);
   for (const r of s.rooms) {
     const [wasPowered, wasBreathable] = before.get(r.id) ?? [r.powered, r.breathable];
-    const where = `${ROOM_DEFS[r.type].label} at ${coord(r.x, r.y)}`;
+    const where = `${nameOf(r)} at ${coord(r.x, r.y)}`;
     if (needsPower(r.type) && r.powerFrom !== null) {
       if (wasPowered && !r.powered) log.push({ kind: 'warn', text: `${where} lost power.` });
       if (!wasPowered && r.powered) log.push({ kind: 'ok', text: `${where} is online.` });
@@ -267,8 +326,9 @@ export function step(s: State): LogLine[] {
   s.tick++;
   s.materials += 1 + s.crew.length * MATERIAL_PER_COLONIST;
 
-  const o2Made = s.rooms.filter((r) => r.type === 'oxygen' && r.powered).length * OXYGEN_OUTPUT;
-  const foodMade = s.rooms.filter((r) => r.type === 'garden' && r.powered).length * GARDEN_OUTPUT;
+  const made = (type: RoomType) => s.rooms.filter((r) => r.type === type && r.powered).reduce((n, r) => n + statsOf(r).output, 0);
+  const o2Made = made('oxygen');
+  const foodMade = made('garden');
   const oxyBefore = s.oxygen;
   const foodBefore = s.food;
   s.oxygen = clamp(s.oxygen + o2Made - s.crew.length * COLONIST_O2, 0, STOCK_CAP);

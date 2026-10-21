@@ -31,7 +31,7 @@ A real-time colony survival sim played mostly through a **command line**. The pl
 
 ## Tech
 
-- TypeScript + Vite, no framework. Run with `npm install`, `npm run dev`. `npm run typecheck` runs `tsc --noEmit`.
+- TypeScript + Vite, no framework. Run with `npm install`, `npm run dev`. `npm run typecheck` runs `tsc --noEmit`. `npm run smoke` runs `scripts/smoke.ts`, headless checks of commands and the simulation (no browser).
 - Canvas for the map, plain DOM for the HUD and terminal.
 - Files in `src/`:
   - `sim.ts` — game state, room definitions, tick simulation (no DOM).
@@ -86,7 +86,8 @@ Flags can be abbreviated: `-loc`/`-l` for `-location`, `-f`/`-src` for `-from`, 
 - `build <type> -location <cell>` — spend materials to build. Warns if the new room still needs wiring or piping.
 - `wire -from <reactor> -to <room>` / `unwire -to <room>` — power lines.
 - `pipe -from <oxygen plant> -to <quarters>` / `unpipe -to <quarters>` — air pipes.
-- `demolish -location <cell>` — 50% refund. The hub cannot be demolished.
+- `upgrade` / `upgrade -location <cell>` — list upgradable rooms, or upgrade one from Mk1 to Mk2 in place (cost and Mk2 stats in API.md, Tiers). A broken room can be upgraded but stays broken; an upgrade that raises power draw is refused if the reactor lacks spare power. **Implemented (Slice 2).**
+- `demolish -location <cell>` — refunds 50% of everything spent on the room (build plus upgrade). The hub cannot be demolished.
 - `inspect -location <cell>` — details for a room (load, pipes, power/air state, nearby lounges) and its radius on the map. Also highlights its connections (below).
 - `inspect reset` — clears the connection highlight.
 - `rooms` — list every room with problem flags (NOT WIRED, NO POWER, NOT PIPED, NO AIR); working rooms get a green `[OPERATIONAL]` tag. This uses an optional `tag` (coloured suffix) on `LogLine`, which `main.ts` renders as a span.
