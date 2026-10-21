@@ -42,6 +42,8 @@ interface Command {
   tag: 'action' | 'query' | 'ui';
   /** Flags this command understands, with a short description of their value. */
   flags?: Record<string, string>;
+  /** Extra explanation shown only by `help <command>`, so the one-line hint stays short. */
+  details?: string;
   run: (s: State, a: Args) => CommandResult;
 }
 
@@ -326,7 +328,7 @@ export const COMMANDS: Record<string, Command> = {
       if (name && COMMANDS[name]) {
         const c = COMMANDS[name];
         const flagLines = Object.entries(c.flags ?? {}).map(([f, d]) => info(`    ${f.padEnd(10)} ${d}`));
-        return { lines: [info(`${c.usage}\n  ${c.summary}`), ...flagLines] };
+        return { lines: [info(`${c.usage}\n  ${c.summary}`), ...(c.details ? [info(`  ${c.details}`)] : []), ...flagLines] };
       }
       const w = Math.max(...Object.keys(COMMANDS).map((k) => k.length));
       return { lines: [info('Commands (Tab completes, ↑/↓ recalls history):'), ...Object.entries(COMMANDS).map(([k, c]) => info(`  ${k.padEnd(w)}  ${c.summary}`))] };
@@ -367,8 +369,9 @@ export const COMMANDS: Record<string, Command> = {
   },
   build: {
     tag: 'action',
-    usage: 'build [<category>] | build <type> -location <cell>   e.g. build reactor -location B4',
-    summary: `Construct a room. Types: ${BUILDABLE.join(', ')}. Give a category (${CATEGORY_ORDER.join(', ')}) instead of a type to list what it holds; "build" alone lists the categories.`,
+    usage: 'build <type> -location <cell>   e.g. build reactor -location B4',
+    summary: 'Construct a room. Try "build" alone.',
+    details: `Types: ${BUILDABLE.join(', ')}. Categories: ${CATEGORY_ORDER.join(', ')}. Give a category instead of a type to list the types in it.`,
     flags: { '-location': 'Cell to build on (alias -loc, -l).' },
     run: (s, a) => {
       const type = a.pos[0];
@@ -757,7 +760,7 @@ export function suggest(s: State, input: string): { completions: string[]; parti
     hint = `${flagContext} expects a cell like B4. ${options.length ? 'Valid: ' + options.join(' ') : ''}`;
   } else if (name === 'build' && tokens.length === 1) {
     options = [...activeCategories(), ...BUILDABLE];
-    hint = `Categories: ${categoryNames()}.  Types: ${BUILDABLE.map((t) => `${t}(${ROOM_DEFS[t].cost})`).join('  ')}`;
+    hint = BUILDABLE.map((t) => `${t}(${ROOM_DEFS[t].cost})`).join('  ');
   } else if (COMMANDS[name]?.flags) {
     options = Object.keys(COMMANDS[name].flags!).filter((f) => !usedFlags.has(f));
     if (name === 'inspect' && tokens.length === 1) options.push('reset');
