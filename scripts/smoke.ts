@@ -222,6 +222,98 @@ const run = (s: State, ...lines: string[]): void => { for (const l of lines) exe
   check('Mk2 lounge reaches one cell further', lounge(false) === 0 && lounge(true) === 1, `${lounge(false)} ${lounge(true)}`);
 }
 
+// --- Slice 3: compute capacity and the data link ------------------------------------------------
+{
+  const s = rich();
+  check('build compute lists the rack', text(s, 'build compute').includes('rack') && text(s, 'build compute').includes('Server Rack') && text(s, 'build compute').includes('35'), text(s, 'build compute'));
+  check('compute is now a visible category', text(s, 'build').includes('compute'));
+  check('status has no compute line before a rack', !text(s, 'status').includes('Compute'));
+  step(s);
+  check('status compute explains there are no racks', text(s, 'status compute').includes('No server racks yet'), text(s, 'status compute'));
+
+  const built = execute(s, 'build rack -l g5');
+  const warns = built.lines.filter((l) => l.kind === 'warn').map((l) => l.text).join(' | ');
+  check('build rack warns about wire and data', warns.includes('Not wired yet') && warns.includes('No data yet: net -from <hub> -to G5'), warns);
+  check('rack flags: not wired and not networked', /g5\s+Server Rack\s+\[NOT WIRED, NOT NETWORKED\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  check('status shows a compute line once a rack exists', text(s, 'status').includes('Compute     0 used / 0 capacity'), text(s, 'status'));
+  check('alerts report the rack', text(s, 'status alerts').includes('NOT WIRED, NOT NETWORKED'), text(s, 'status alerts'));
+
+  run(s, 'wire -f h6 -t g5');
+  check('wired but not networked gives no compute', s.computeSupply === 0 && text(s, 'rooms').includes('NOT NETWORKED'));
+  check('status compute tells you how to link it', text(s, 'status compute').includes('net -from <hub> -to g5'), text(s, 'status compute'));
+
+  const linked = execute(s, 'net -f i6 -t g5');
+  check('net links the rack', linked.lines[0].kind === 'ok' && linked.lines[0].text.startsWith('Linked data'), linked.lines[0].text);
+  check('cursor moves to the rack', linked.select?.x === 6 && linked.select?.y === 4);
+  check('compute capacity is 4', s.computeSupply === 4 && s.computeUsed === 0, String(s.computeSupply));
+  check('rack is operational', /g5\s+Server Rack\s+\[OPERATIONAL\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  step(s);
+  check('status shows capacity', text(s, 'status').includes('Compute     0 used / 4 capacity'), text(s, 'status'));
+  const sc = text(s, 'status compute');
+  check('status compute shows capacity and the rack', sc.includes('Capacity  4   used 0   free 4') && sc.includes('online, +4'), sc);
+  check('status compute -time works', !text(s, 'status compute -time 2').includes('must be'));
+  const ins = text(s, 'inspect g5');
+  check('inspect shows compute and data', ins.includes('Compute: +4') && ins.includes('(online)') && ins.includes('Data: linked'), ins);
+  check('inspect hub shows data radius and ports', text(s, 'inspect i6').includes('Data radius: 5') && text(s, 'inspect i6').includes('Data ports: 1 / 6'), text(s, 'inspect i6'));
+
+  check('net preview is valid for a rack in range', linkPreview(s, 'net -f i6 -t g5')?.valid === true);
+  check('net preview is invalid for a non-rack target', linkPreview(s, 'net -f i6 -t h6')?.valid === false);
+  check('net preview is invalid from a non-source', linkPreview(s, 'net -f h6 -t g5')?.valid === false);
+
+  run(s, 'unwire -t g5');
+  check('losing power drops compute to 0', s.computeSupply === 0);
+  run(s, 'wire -f h6 -t g5');
+  check('rewiring restores it', s.computeSupply === 4);
+  const un = text(s, 'unnet -t g5');
+  check('unnet disconnects', un.startsWith('Disconnected data') && s.computeSupply === 0 && text(s, 'rooms').includes('NOT NETWORKED'), un);
+  check('unnet again is an error', text(s, 'unnet -t g5').includes('has no data link'));
+  run(s, 'net -f i6 -t g5');
+
+  run(s, 'build rack -l g6', 'wire -f h6 -t g6', 'net -f i6 -t g6');
+  check('two racks give 8', s.computeSupply === 8, String(s.computeSupply));
+
+  // Errors.
+  check('net from a non-hub is refused', text(s, 'net -f h6 -t g5').includes('is not a data source'), text(s, 'net -f h6 -t g5'));
+  check('net to a non-rack is refused', text(s, 'net -f i6 -t j6').includes('does not use a data link'), text(s, 'net -f i6 -t j6'));
+  run(s, 'build rack -l c3');
+  const far = text(s, 'net -f i6 -t c3');
+  check('net out of range is refused with the distance', far.startsWith('Out of range') && far.includes('data radius') && far.includes('is 6.7 cells'), far);
+  check('net with a missing flag', text(s, 'net -f i6').startsWith('Missing -to'), text(s, 'net -f i6'));
+  check('net with nothing built', text(s, 'net -f i6 -t a1') === 'Nothing is built at A1.');
+
+  // Ports: the hub has 6. Two racks are linked already.
+  for (const c of ['g7', 'i4', 'i8', 'k5']) run(s, `build rack -l ${c}`, `net -f i6 -t ${c}`);
+  check('hub shows 6 ports in use', text(s, 'inspect i6').includes('Data ports: 6 / 6'), text(s, 'inspect i6'));
+  run(s, 'build rack -l k7');
+  const full = text(s, 'net -f i6 -t k7');
+  check('seventh link is refused for ports', full.includes('no free ports') && full.includes('6 of 6'), full);
+  check('a rack already linked can be re-linked with full ports', text(s, 'net -f i6 -t g5').startsWith('Linked data'));
+
+  // Upgrade and refund.
+  run(s, 'wire -f h6 -t g7');
+  const before = s.computeSupply;
+  const up = text(s, 'upgrade -l g5');
+  check('rack upgrades to Mk2 for 20', up.startsWith('Upgraded Server Rack') && s.materials < 10000, up);
+  check('Mk2 rack gives 6 instead of 4', s.computeSupply === before + 2, `${before} -> ${s.computeSupply}`);
+  check('Mk2 rack draws 3', statsOf(room(s, 'g5')).draw === 3);
+  const m = s.materials;
+  run(s, 'demolish -l g5');
+  check('Mk2 rack refunds 27 (half of 35+20)', s.materials - m === 27, String(s.materials - m));
+  const m2 = s.materials;
+  run(s, 'demolish -l g6');
+  check('Mk1 rack refunds 17', s.materials - m2 === 17, String(s.materials - m2));
+
+  // View, history, completion, tags.
+  check('view compute highlights racks', (execute(s, 'view compute').view?.highlight ?? []).includes('rack'));
+  check('view rack works', (execute(s, 'view racks').view?.highlight ?? []).includes('rack'));
+  check('history records compute', s.history.length > 0 && s.history[s.history.length - 1].computeSupply === s.computeSupply);
+  check('net -f completes to the hub only', suggest(s, 'net -f ').completions.join(' ') === 'i6', suggest(s, 'net -f ').completions.join(' '));
+  check('net -t completes to racks only', suggest(s, 'net -f i6 -t ').completions.every((c) => room(s, c).type === 'rack'));
+  check('unnet -t completes to linked racks only', suggest(s, 'unnet -t ').completions.every((c) => room(s, c).dataFrom !== null) && suggest(s, 'unnet -t ').completions.length > 0);
+  check('net and unnet are actions', COMMANDS.net.tag === 'action' && COMMANDS.unnet.tag === 'action');
+  check('demolish drops data links to a missing room cleanly', (() => { const t = rich(); run(t, 'build rack -l g5', 'wire -f h6 -t g5', 'net -f i6 -t g5', 'demolish -l g5'); step(t); return t.computeSupply === 0; })());
+}
+
 // --- Autofill / completion -------------------------------------------------------------------
 {
   const s = rich();

@@ -2,7 +2,7 @@
 
 **Goal.** The first step of the scripting ladder (DESIGN.md, "Scripting"): the player records a sequence of commands by doing them once, then replays it as a background process that costs compute. There are no variables, selectors or events yet. Those wait for the language and query design (Slice 13).
 
-**Status:** Not started. **Depends on:** Slices 3 and 4 (working compute capacity) and Slice 5 (the shared project mechanism for reserving capacity).
+**Status:** Not started. **Depends on:** Slice 3 (working compute capacity) and Slice 5 (the shared project mechanism for reserving capacity).
 
 ## Why this slice is small on purpose
 
@@ -90,7 +90,7 @@ Tab completion: script names after `run`, `kill`, `scripts show` and `scripts de
 
 ## Human test checklist
 
-All steps assume a wired, networked server rack so compute is available (Slices 3 and 4).
+All steps assume a wired, networked server rack so compute is available (Slice 3).
 
 1. `record hookup`. The hint or prompt shows that recording is on.
 2. `build garden -l e6`, then `wire -f h6 -t e6`, then `status` (a query), then `build garden -l h6` (this fails because it is occupied), then `stop`. You see `Saved script "hookup" (2 steps).` The failed build and the query were not saved.

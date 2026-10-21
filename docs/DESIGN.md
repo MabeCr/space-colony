@@ -56,12 +56,13 @@ A real-time colony survival sim played mostly through a **command line**. The pl
 
 | Room | Cost | Power draw | Radius | Notes |
 |---|---|---|---|---|
-| Command Hub | — | 0 | — | Cannot be built or demolished. Houses 4 on cots. Always has air. |
+| Command Hub | — | 0 | data radius 5 | Cannot be built or demolished. Houses 4 on cots. Always has air. Root of the data network: 6 ports, so up to 6 racks within 5 cells. |
 | Reactor | 40 | 0 | 4 | Produces 12 power. Wire it to rooms within its radius. |
 | Oxygen Plant | 30 | 3 | 4 | Needs power. Produces 3 oxygen per tick. Pipes to up to 4 quarters in radius. |
 | Hydroponics | 25 | 2 | — | Needs power. Produces 2 food per tick. |
 | Quarters | 20 | 1 | — | Needs a power wire and an air pipe. Houses 2. Draws new arrivals. |
 | Lounge | 30 | 2 | 3 | Needs power. Quarters within its radius get a happiness boost. |
+| Server Rack | 35 | 2 | — | Needs power and a data link. Produces 4 compute capacity. Mk2: 6 capacity, draw 3, upgrade 20. **Implemented (Slice 3).** |
 
 Distance is straight-line (Euclidean) between cell centres. A wire is "working" only if the room is in the reactor's radius and the reactor has spare capacity; a pipe is working only if the plant is powered, the quarters are in radius, and the plant has fewer than 4 pipes in use.
 
@@ -86,6 +87,8 @@ Flags can be abbreviated: `-loc`/`-l` for `-location`, `-f`/`-src` for `-from`, 
 - `build <type> -location <cell>` — spend materials to build. Warns if the new room still needs wiring or piping.
 - `wire -from <reactor> -to <room>` / `unwire -to <room>` — power lines.
 - `pipe -from <oxygen plant> -to <quarters>` / `unpipe -to <quarters>` — air pipes.
+- `net -from <hub> -to <rack>` / `unnet -to <rack>` — data links (violet on the map). The hub is the only data source until the network switch (Slice 4). A rack produces compute only with power **and** data. **Implemented (Slice 3).**
+- `status compute` — graph of compute capacity, used and free, and each rack's state with the fix. The plain `status` and the HUD show a Compute line once a rack exists. History samples include `computeSupply` and `computeUsed`.
 - `upgrade` / `upgrade -location <cell>` — list upgradable rooms, or upgrade one from Mk1 to Mk2 in place (cost and Mk2 stats in API.md, Tiers). A broken room can be upgraded but stays broken; an upgrade that raises power draw is refused if the reactor lacks spare power. **Implemented (Slice 2).**
 - `demolish -location <cell>` — refunds 50% of everything spent on the room (build plus upgrade). The hub cannot be demolished.
 - `inspect -location <cell>` — details for a room (load, pipes, power/air state, nearby lounges) and its radius on the map. Also highlights its connections (below).
@@ -139,7 +142,7 @@ Decision: clicking a cell only targets it, exactly as if the cursor had been mov
   - `view <room type>` (also the plural, e.g. `view gardens`) lights up every room of that type and dims the other rooms and links, then lists the cells. Types: hub, reactor, oxygen, garden, quarters, lounge. Nothing built of that type clears it with a warning. The highlight stays until `view reset`, another `view`, or an `inspect` on a room (the newest command wins; each clears the other). `view reset` also clears an `inspect` focus.
   - Commands report camera and highlight changes through a `view` field on `CommandResult` (`ViewAction` in `commands.ts`); `main.ts` applies it to the renderer.
 - Wires are amber, pipes are cyan. Working links animate as moving dashes; broken ones are dotted red.
-- Rooms with missing power or air pulse red and show a bolt or droplet badge.
+- Rooms with missing power, air or data pulse red and show a bolt, droplet or network-node badge.
 - Hovered or selected rooms with a radius show a range ring and light up the in-range cells.
 
 ## Planned game design (not built yet)
@@ -167,7 +170,7 @@ Agreed in design discussion on 2026-10-19. Nothing here is built. Implementation
 - Category names must not collide with room type names (the life support category is `life`, because `oxygen` is already a room type). Category names are `power`, `life`, `food`, `habitat`, `industry`, `compute`, `defense`, `maint`.
 - Categories may later carry real mechanics (research grouping, wave targeting, corruption weighting), but that is a separate decision and is **Open**.
 
-**Compute (Decided).** Compute is a **capacity**, not a stock, and works like power:
+**Compute (Decided).** *Supply side implemented 2026-10-20 (Slice 3): server racks, the data link from the hub, `status compute`, and a HUD chip. Nothing consumes compute yet; research is Slice 5. The hub gives no baseline compute for now.* Compute is a **capacity**, not a stock, and works like power:
 
 - Compute rooms produce capacity. Running scripts reserve capacity continuously, and research projects occupy capacity until they finish. The player cannot research and automate everything at once, which makes "how much do I automate?" a budget and placement decision.
 - This reuses the per-tick instruction budget idea in Scripting below: the budget is the compute capacity.

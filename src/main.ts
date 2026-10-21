@@ -186,12 +186,12 @@ function filledLine(c: { x: number; y: number }): string {
     return i < 0 ? words : [...words.slice(0, i), ...words.slice(i + 2)];
   };
   if (verb === 'build' && words.length >= 2) return [...without('-location'), '-location', cell].join(' ');
-  if (verb === 'wire' || verb === 'pipe') {
+  if (verb === 'wire' || verb === 'pipe' || verb === 'net') {
     // First fill is -from, the next is -to; once both are set, fills replace -to.
     const flag = words.includes('-from') && !words.includes('-to') ? '-to' : words.includes('-to') ? '-to' : '-from';
     return [...without(flag), flag, cell].join(' ');
   }
-  if (verb === 'unwire' || verb === 'unpipe') return [...without('-to'), '-to', cell].join(' ');
+  if (verb === 'unwire' || verb === 'unpipe' || verb === 'unnet') return [...without('-to'), '-to', cell].join(' ');
   if (verb === 'demolish') return `demolish -location ${cell}`;
   if (verb === 'upgrade') return `upgrade -location ${cell}`;
   if (!verb || verb === 'inspect') return `inspect -location ${cell}`;
@@ -219,6 +219,7 @@ function updateHud(): void {
   const speed = s.speed === 1 ? '1x' : s.speed === 0.5 ? '1/2x' : '1/4x';
   hud.innerHTML =
     chip('Power', `${s.powerDemand}/${s.powerSupply}`, s.powerDemand > s.powerSupply ? 'bad' : 'ok') +
+    (s.rooms.some((r) => r.type === 'rack') ? chip('Compute', `${s.computeUsed}/${s.computeSupply}`, s.computeUsed > s.computeSupply ? 'bad' : s.computeSupply === 0 ? 'warn' : 'ok') : '') +
     chip('Oxygen', s.oxygen.toFixed(0), lvl(s.oxygen, 15, 35)) +
     chip('Food', s.food.toFixed(0), lvl(s.food, 15, 35)) +
     chip('Materials', String(Math.floor(s.materials))) +

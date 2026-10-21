@@ -1,4 +1,4 @@
-import { COLS, ROOM_DEFS, ROWS, coord, dist, nameOf, needsPower, roomAt, roomById, statsOf, type RoomType, type State } from './sim';
+import { COLS, ROOM_DEFS, ROWS, coord, dist, nameOf, needsData, needsPower, roomAt, roomById, statsOf, type RoomType, type State } from './sim';
 
 export interface View {
   selected: { x: number; y: number } | null;
@@ -13,8 +13,11 @@ export interface View {
   /** Set by `view <room type>`: rooms of other types (and their links) dim. The newest of view and inspect wins: each clears the other. */
   highlight: RoomType[] | null;
   /** Wire or pipe being typed with both -from and -to set; `valid` is false if it would be refused. */
-  linkGhost: { kind: 'wire' | 'pipe'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null;
+  linkGhost: { kind: 'wire' | 'pipe' | 'net'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null;
 }
+
+/** Colour of data links (violet). */
+const DATA_COLOR = 'rgba(177, 140, 255, 0.7)';
 
 /** Opacity of the ghost room shown for a pending build. */
 const GHOST_ALPHA = 0.4;
@@ -172,8 +175,8 @@ export class Renderer {
     if (fr) {
       lit.add(fr.id);
       for (const r of s.rooms) {
-        if (r.id === fr.id) { if (r.powerFrom !== null) lit.add(r.powerFrom); if (r.airFrom !== null) lit.add(r.airFrom); }
-        if (r.powerFrom === fr.id || r.airFrom === fr.id) lit.add(r.id);
+        if (r.id === fr.id) { if (r.powerFrom !== null) lit.add(r.powerFrom); if (r.airFrom !== null) lit.add(r.airFrom); if (r.dataFrom !== null) lit.add(r.dataFrom); }
+        if (r.powerFrom === fr.id || r.airFrom === fr.id || r.dataFrom === fr.id) lit.add(r.id);
       }
     }
     const DIM = 0.22;
@@ -181,6 +184,7 @@ export class Renderer {
     for (const r of s.rooms) {
       const wire = roomById(s, r.powerFrom);
       const plant = r.type === 'quarters' ? roomById(s, r.airFrom) : undefined;
+      const data = roomById(s, r.dataFrom);
       const touches = (a?: { id: number }) => !!fr && !!a && (a.id === fr.id || r.id === fr.id);
       if (wire) {
         const on = fr ? touches(wire) : !v.highlight;
@@ -194,13 +198,19 @@ export class Renderer {
         ctx.lineWidth = fr && on ? 2.5 : 1.5;
         this.link(plant, r, r.breathable, 'rgba(90, 209, 230, 0.65)', t, 3);
       }
+      if (data) {
+        const on = fr ? touches(data) : !v.highlight;
+        ctx.globalAlpha = on ? 1 : DIM;
+        ctx.lineWidth = fr && on ? 2.5 : 1.5;
+        this.link(data, r, r.data, DATA_COLOR, t, 4);
+      }
     }
     // Translucent preview of the wire or pipe about to be run; red and dotted if it would be refused.
     if (v.linkGhost) {
       const g = v.linkGhost;
       ctx.globalAlpha = GHOST_ALPHA;
       ctx.lineWidth = 1.5;
-      this.link(g.from, g.to, g.valid, g.kind === 'wire' ? 'rgba(247, 185, 85, 0.65)' : 'rgba(90, 209, 230, 0.65)', t, g.kind === 'pipe' ? 3 : 5);
+      this.link(g.from, g.to, g.valid, g.kind === 'wire' ? 'rgba(247, 185, 85, 0.65)' : g.kind === 'net' ? DATA_COLOR : 'rgba(90, 209, 230, 0.65)', t, g.kind === 'wire' ? 5 : g.kind === 'net' ? 4 : 3);
     }
     ctx.globalAlpha = 1;
     ctx.lineWidth = 1.5;
@@ -213,7 +223,8 @@ export class Renderer {
       const needPower = needsPower(r.type);
       const noPower = needPower && !r.powered;
       const noAir = r.type === 'quarters' && !r.breathable;
-      const dead = noPower || noAir;
+      const noData = needsData(r.type) && !r.data;
+      const dead = noPower || noAir || noData;
       const x = ox + r.x * cell + 3;
       const y = oy + r.y * cell + 3;
       const sz = cell - 6;
@@ -223,7 +234,8 @@ export class Renderer {
       // Badges for what's missing: a bolt for power, a droplet for air.
       let bx = x + sz - 7;
       if (noPower) { badge(ctx, bx, y + 7, 'bolt', '#f7b955'); bx -= 14; }
-      if (noAir) badge(ctx, bx, y + 7, 'drop', '#5ad1e6');
+      if (noAir) { badge(ctx, bx, y + 7, 'drop', '#5ad1e6'); bx -= 14; }
+      if (noData) badge(ctx, bx, y + 7, 'data', '#b18cff');
       ctx.globalAlpha = 1;
     }
 
@@ -391,6 +403,15 @@ function drawIcon(ctx: CanvasRenderingContext2D, type: RoomType, r: number, colo
       ctx.beginPath(); ctx.arc(-r * 0.5, -r * 0.05, r * 0.22, 0, Math.PI * 2); ctx.fill();
       break;
     }
+    case 'rack': { // server stack: three units with status lights
+      for (let i = -1; i <= 1; i++) {
+        const y = i * r * 0.62;
+        ctx.strokeRect(-r * 0.85, y - r * 0.24, r * 1.7, r * 0.48);
+        ctx.beginPath(); ctx.arc(-r * 0.5, y, r * 0.09, 0, Math.PI * 2); ctx.fill();
+        if (active && Math.sin(t / 300 + i * 2) > 0) { ctx.beginPath(); ctx.arc(-r * 0.2, y, r * 0.09, 0, Math.PI * 2); ctx.fill(); }
+      }
+      break;
+    }
     case 'lounge': { // star
       ctx.beginPath();
       for (let i = 0; i < 10; i++) {
@@ -404,7 +425,7 @@ function drawIcon(ctx: CanvasRenderingContext2D, type: RoomType, r: number, colo
   }
 }
 
-function badge(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'bolt' | 'drop', color: string): void {
+function badge(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'bolt' | 'drop' | 'data', color: string): void {
   ctx.save();
   ctx.translate(x, y);
   ctx.fillStyle = '#0b0f1e';
@@ -413,6 +434,14 @@ function badge(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'bolt'
   ctx.lineWidth = 1.2;
   ctx.stroke();
   ctx.fillStyle = color;
+  if (kind === 'data') { // three linked nodes
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath(); ctx.moveTo(0, -2.6); ctx.lineTo(-2.8, 2.4); ctx.moveTo(0, -2.6); ctx.lineTo(2.8, 2.4); ctx.stroke();
+    for (const [nx, ny] of [[0, -2.6], [-2.8, 2.4], [2.8, 2.4]]) { ctx.beginPath(); ctx.arc(nx, ny, 1.5, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+    return;
+  }
   ctx.beginPath();
   if (kind === 'bolt') { ctx.moveTo(1.5, -4); ctx.lineTo(-2.5, 0.5); ctx.lineTo(0, 0.5); ctx.lineTo(-1.5, 4); ctx.lineTo(2.5, -0.5); ctx.lineTo(0, -0.5); }
   else { ctx.moveTo(0, -4); ctx.quadraticCurveTo(3.5, 0.5, 0, 3.5); ctx.quadraticCurveTo(-3.5, 0.5, 0, -4); }

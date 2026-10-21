@@ -2,7 +2,7 @@
 
 **Goal.** Add research as a command that reserves compute capacity until a project finishes, and use it to gate structures and tiers. This is the main in-run unlock path.
 
-**Status:** Not started. **Depends on:** Slices 2, 3 and 4.
+**Status:** Not started. **Depends on:** Slices 2 and 3.
 
 ## Scope
 
@@ -66,7 +66,7 @@ Tab completion offers tech names after `research`, and `cancel` plus running tec
 
 ## Human test checklist
 
-1. Load the page and build a rack, wire it and net it (Slices 3 and 4). `status compute` shows capacity 4 and free 4.
+1. Load the page and build a rack, wire it and net it (Slice 3). `status compute` shows capacity 4 and free 4.
 2. Type `research`. You see the available techs with costs and durations. Locked techs show their prerequisite.
 3. `research mk2-reactor`. It starts. `status compute` shows 2 reserved and 2 free. `research` shows progress rising each tick (use `speed 1/4` to watch).
 4. Start a second project that fits. Both run. Start a third that does not fit: you get the shortfall message.
