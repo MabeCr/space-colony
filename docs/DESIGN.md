@@ -151,7 +151,149 @@ Everything in this section is the intended direction, agreed in design discussio
 
 ### Colonists
 
-**Decided.** The crew is not fixed. The colony starts with 4 named colonists and grows as the player builds quarters, which is what justifies needing more food, oxygen and power (built). Colonists are mechanically thin for now: abstract, with a name and a role, and their needs roll up into the shared happiness score. This may change later, for example towards individuals with personalities, but not yet.
+**Decided.** The crew is not fixed. The colony starts with 4 named colonists and grows as the player builds quarters, which is what justifies needing more food, oxygen and power (built). Colonists are mechanically thin for now: abstract, with a name and a role, and their needs roll up into the shared happiness score. **Decided 2026-10-20:** crew stay a **pool**, not individuals the player tracks. Names are flavour only, so colonies can grow without limit. Roles now matter, as counts (for example 3 engineers and 2 botanists), through staffing and training. See "Crew, staffing and training" below. Per-person personalities are no longer the plan.
+
+### Structures, tiers and compute
+
+Agreed in design discussion on 2026-10-19. Nothing here is built. Implementation is broken into small slices in [`docs/specs/`](specs/README.md), each with a human test checklist. Numbers in this section and in the specs are placeholders until balanced in play, unless stated.
+
+**Categories (Decided).** Rooms are grouped into categories: power, life support, food, habitation, industry, compute, defense and maintenance. A category is a filing and browsing layer only. It never changes how you build: `build <type> -location <cell>` stays exactly as it is, and type names stay unique. Categories are used for discovery:
+
+- `build` alone lists the categories; `build <category>` lists the types in it with cost, tier and lock status. Locked types are shown with their unlock requirement so the player can plan ahead.
+- `view <category>` lights up every room in the category, the way `view <room type>` does now.
+- `help` and Tab completion group by category.
+- Category names must not collide with room type names (the life support category is `life`, because `oxygen` is already a room type). Category names are `power`, `life`, `food`, `habitat`, `industry`, `compute`, `defense`, `maint`.
+- Categories may later carry real mechanics (research grouping, wave targeting, corruption weighting), but that is a separate decision and is **Open**.
+
+**Compute (Decided).** Compute is a **capacity**, not a stock, and works like power:
+
+- Compute rooms produce capacity. Running scripts reserve capacity continuously, and research projects occupy capacity until they finish. The player cannot research and automate everything at once, which makes "how much do I automate?" a budget and placement decision.
+- This reuses the per-tick instruction budget idea in Scripting below: the budget is the compute capacity.
+- **Proposed:** heavier compute load raises the corruption rate, so automation has a cost (see Corruption).
+
+**Research (Decided).** Research is a **command** (`research <tech>`) that reserves compute capacity until the project finishes. The Command Hub is assumed to be smart enough to provide research, so there is no lab room to start. **Open:** a lab could return later as a Mk2 or Mk3 upgrade of the server rack if research should feel more physical. Completed research unlocks structures and tiers, which appear as locked entries in the `build` listing until then. Meta-progression decides which blueprints are in the research pool at the start of a run.
+
+**Tiers (Decided).** Three tiers to start:
+
+- **Mk1:** built normally.
+- **Mk2:** an in-place upgrade (`upgrade -location <cell>`), so the player can keep their opening base design.
+- **Mk3:** a new building, with a larger boost, that must be integrated into the colony. It needs a new link type that the category's Mk1 and Mk2 never used. Integration should be a layout puzzle and a placement test, not just a bigger number.
+- **Proposed:** Mk3 buildings take a larger footprint (2x2), so a player who leaves spare room in their layout is rewarded. Whether Mk3 consumes or replaces the Mk2 (with a bonus refund) is **Open**. The starting grid is small (16 by 10), but the colony will grow onto a larger revealed map (see "Map expansion and survey"), so 2x2 footprints should be workable once the player has surveyed more room.
+
+**Link types (Decided: more are needed; the set is Proposed).** Each new link has a natural home and its own verb and un-verb, like `wire`/`unwire` and `pipe`/`unpipe`:
+
+| Link | Carries | Used by |
+|---|---|---|
+| Data | Compute and script control | Compute rooms, turrets, Mk3 habitat and maintenance |
+| Coolant | Heat removal | Mk3 power, life support, compute and defense |
+| Cargo | Materials and ammo | Industry, Mk3 food, turrets |
+
+Early tiers should need at most one new link type each, so typing load stays low in a game that cannot be paused. Links follow the existing rules: explicit, persistent when broken, and errors that explain themselves.
+
+**Data network (Decided: hub as root; switch Proposed).**
+
+- The Command Hub is the root of the data network. Anything that needs a data link must reach the hub, directly or through relays.
+- **Network switch (Proposed):** a compute-category room that needs power, relays data to rooms within its own radius, and has a port limit (like the oxygen plant's 4 pipes). It lets the player plan the colony in sections without running data across the whole map. It is also a wave target: losing a switch cuts a whole section off.
+
+**Proposed category contents (baseline).** Mk1 and Mk2 are in place; Mk3 is a new building. Names are placeholders. This is the minimum set; the variety principle below adds more Mk1 rooms to the categories that need them.
+
+| Category | Mk1 | Mk2 | Mk3 | New link at Mk3 |
+|---|---|---|---|---|
+| Power | Reactor | Higher output and radius | Fusion core (2x2) | Coolant |
+| Life support | Oxygen plant | More pipe slots | Atmosphere processor | Coolant |
+| Food | Hydroponics | Higher yield | Bio-dome | Cargo |
+| Habitation | Quarters, lounge | More beds, bigger boost | Habitat ring | Data |
+| Industry | Mine (needs a deposit), fabricator | Faster output | Refinery | Cargo |
+| Compute | Server rack, network switch | More capacity | Data core | Coolant |
+| Defense | Turret | Better damage and range | Shield or beam array | Coolant and cargo |
+| Maintenance | Repair bay | Faster repairs | Antivirus core | Data |
+
+**Variety within a category (Decided principle; specific rooms Proposed).** Each category should eventually offer two or three Mk1 options that differ in **tradeoff, not just in numbers**, so that picking one is a real decision and the player is not simply choosing the bigger version. Added in the order the structures track introduces their link types, not all at once. Suggested starting variants, all names placeholders:
+
+| Category | Existing or baseline | Possible variants and the tradeoff |
+|---|---|---|
+| Food | Hydroponics: cheap, reliable | Algae vat: high output, needs coolant or heavy power. Synthesizer: makes food from materials, compute-hungry. |
+| Life support | Oxygen plant: produces air | Scrubber: cuts oxygen use instead of producing it. Reserve tank: buffers a shortage during a wave. |
+| Defense | Turret (single target) | Area-damage turret. Decoy or priority-target room. |
+| Power | Reactor | Battery (buffers, does not produce); solar (free but weak, radius-limited). |
+| Habitation | Quarters, lounge | Mess hall and gym (different happiness effects). |
+
+**Defense variety is tied to the factions.** The three Mk1 defense roles map onto the faction table in Enemy factions: a single-target turret answers rogue machines, an area-damage turret answers aliens, and a decoy or priority-target room answers pirates. The player reads the incoming threat and builds for it. This also supports the requirement that all factions be about equally fun and difficult: each has a natural counter that is a real choice, not an obvious best room.
+
+**Mk3 fork between the win paths (Proposed; exclusivity Open).** The proposal is that each category's Mk3 comes in two flavours, one leaning toward Ascension and one toward Conquest, so that the player's late-game commitment is expressed through what they build, not through a menu. The Ascension flavour favours stability, efficiency and research output. The Conquest flavour favours burst output, military support and surplus. Illustrative pairs:
+
+| Category | Ascension flavour | Conquest flavour |
+|---|---|---|
+| Power | Fusion core (stable, very large) | Overcharged core (burst output for turrets, runs hot) |
+| Compute | Data core (research speed) | Command core (scripting capacity for fleets) |
+| Food | Bio-dome (high happiness) | Ration plant (cheap bulk, feeds a larger crew) |
+| Defense | Shield array (protects the project) | Strike bay (sends out a strike force) |
+
+- **Open: mutually exclusive or not.** If researching one flavour locks out the other **per category**, the choice is a real commitment, and the player can still hedge across categories (the 70/30 idea in Win conditions). The current leaning is exclusive per category.
+- **Scope decision (Decided).** The fork roughly doubles the Mk3 content to balance, and the win paths are not built (Conquest is explicitly still open). So the extra Mk1 variants come first, since they enrich the early game, and the Mk3 fork is **held** until the win paths are specced. The Mk3 rooms in the specs (fusion core, data core) are the Ascension-flavour default and must not block adding a Conquest sibling later.
+- The fork needs research to support exclusive techs (a tech that excludes another). See the Research spec.
+
+**Build order for this work (Decided).** Compute first (it enables research and automation and introduces the data link), then the larger map and `survey` (it gives deposits and later the rival colony somewhere to be), then Industry (it gives expansion a reason and introduces the cargo link), then Defense (with Slice 2 and the first wave type; it wants coolant and cargo to exist). The ordered slices, with a footprint slice before the Mk3 buildings, are in [`docs/specs/`](specs/README.md). The crew slices (staffing, then the academy) come after tiers and research, since staffing is a Mk2 bonus and training reuses the research reservation mechanism.
+
+### Map expansion and survey
+
+Agreed in design discussion on 2026-10-20. Nothing here is built. The implementation slice is [`docs/specs/08-map-and-survey.md`](specs/08-map-and-survey.md).
+
+**Larger revealed map (Decided).** The colony expands onto a larger map instead of a separate set of outpost grids. Zoom, pan, the radius rules and the existing commands all carry over. The player starts on a small revealed area (today's 16 by 10 layout), and the rest of the map is hidden until surveyed. Separate outpost grids are **parked**, not rejected: an outpost can be thought of later as a far cluster joined by long-range links.
+
+**`survey` (Decided concept).** Survey is how the map is revealed. It is the outward-facing counterpart of `research`: research unlocks what you can build, and survey reveals where you can build it and what is out there.
+
+- **Spends compute (Proposed).** A survey occupies compute capacity for a duration, like a research project, so the two compete for the same capacity. Research leans toward Ascension and survey leans toward Conquest, which makes "what do I spend my compute on?" a real decision tied to the win-path commitment.
+- **Optional early, needed later (Decided, matching the guardrails).** Early on the starting area has enough to play with, and surveying is optional. By Act 2 the nearby deposits are running low, so surveying becomes necessary. Pressure should come from information the player can see, such as deposit amounts and warnings, not from surprise.
+- **What it reveals (Proposed).** Terrain, deposits, hazards and environment factors (the partly hidden environmental setup in Environment and rival colony), and finally the rival colony.
+- **Distance is the cost.** Far sites need power, air, data and cargo to reach them. The reach limits already in the game (and the network switch and relays) turn expansion into an infrastructure puzzle, not just a bigger build area.
+
+**Rival colony on the map (Decided).** The rival is placed far from the hub and stays hidden until a survey covers it. A player committed to Conquest has to survey heavily to find it. An Ascension player may never need to.
+
+**Open**
+
+- Map size and how it is laid out around the starting area. The starting layout (hub I6) must stay valid, and cell names currently run from column A to P and row 1 to 10 (see API.md, Cells). A larger map needs a rule for columns beyond P.
+- Survey shape, range, cost and duration, and whether it must start next to revealed ground.
+- Whether the map also grows in danger as it is revealed, for example more enemy exposure on the edges.
+- Whether fog is visible and how it is drawn, and whether unrevealed cells can be targeted by commands other than `survey`.
+
+### Crew, staffing and training
+
+Agreed in design discussion on 2026-10-20. Nothing here is built. The implementation slices are [`docs/specs/10-crew-and-staffing.md`](specs/10-crew-and-staffing.md) and [`docs/specs/11-academy-and-training.md`](specs/11-academy-and-training.md).
+
+**Principle (Decided).** Crew must not become micromanagement in a game that cannot be paused. They are a **pool**, managed by counts and by rules the game applies for the player. Complexity arrives with the structure tiers, so the opening is unchanged and later play has more to do.
+
+**Roles (Decided that roles matter; the mapping is Proposed).** Each colonist has a role, or is a generalist. A few roles matter, each tied to a category, for example: engineer (power, life support), botanist (food), scientist (compute, including research and survey speed), mechanic (industry, maintenance), medic (habitation) and pilot (defense, and later the strike force). Names are flavour only.
+
+**Staffing (Decided: a bonus for Mk2; Proposed: required for Mk3).**
+
+- Mk1 rooms need no staff, so the early game is unchanged.
+- A Mk2 room has a staff slot. A matching-role colonist in the slot gives a bonus on top of the Mk2 stats *(placeholder: +20 percent)*. An empty slot costs nothing.
+- Mk3 rooms **require** staff to run **(Proposed)**.
+- **Auto-assignment by default.** The game fills slots from the pool by role. The player can override with `assign` and `unassign` to pin which rooms are staffed first when crew are scarce. This gives programmers something to script and gives non-programmers nothing to learn.
+- Understaffing is shown where players already look: `rooms`, `inspect`, `status alerts`. Only rooms that **require** staff are flagged; an empty bonus slot is just information.
+
+**Shaping who arrives (Decided that the player needs some control; mechanisms Proposed).**
+
+- **Passive attraction.** The mix of rooms the player has built tilts which roles arrive. Newcomers mostly arrive as generalists. This needs no player input.
+- **Academy and `train`.** An academy room has training slots, a capacity like compute. `train -role <role> [-count <n>] [-location <cell>]` turns generalists into specialists over time. `-location` is optional: with no location the game picks an academy that has free slots and can teach the role. The player never picks an individual or writes a curriculum. Trainees do not work while training, so training has a visible cost (slower income, an unfilled slot). Which roles an academy can teach depends on its tier, and later on its variant (a war college or research institute as Mk1 variants, in line with the variety principle).
+- **Optional:** a `train auto` policy that rebalances toward what the player's rooms need, and script hooks.
+
+**Win paths (Proposed).** Scientists raise research and survey speed (Ascension). The Conquest strike force is drawn from the same crew, trained at the academy (a strike pilot or soldier role), and can be lost in battle. The second part needs the win paths to be specced first.
+
+**Visualizing crew (Decided direction).** The map never acts, but it can show:
+
+- **Pips on rooms:** one per staffed slot, coloured by role, with a hollow pip for an empty slot on a Mk2 room. This is first and cheap.
+- **A richer `crew` command:** a summary by role (count, assigned, idle) and, with a role argument, the names, where each is and what they are doing (working, sleeping, relaxing, idle). Where and doing are derived from the pool, not simulated per person.
+- **`view crew`:** highlights rooms that have staff and shows where idle crew are.
+- **Later polish (Proposed):** small dots that drift between bunk, workplace and lounge, moving in straight lines with no pathfinding, with a red-alert look during waves to carry the tone shift. Purely visual.
+
+**Open**
+
+- Whether a generalist can fill a staff slot at reduced effect, or only a matching role counts.
+- Whether a specialist can be retrained to another role, and at what cost.
+- The fate of the existing role labels that do not map to a category (Cook, Technician).
+- Whether losing crew in a wave hits specialists first or at random.
 
 ### Scripting
 
@@ -162,6 +304,35 @@ Everything in this section is the intended direction, agreed in design discussio
 - **Proposed:** a deliberately tiny shell-like language (variables, `if`, loops, functions, event handlers such as `on <event>`), interpreted in the game with a per-tick instruction budget so efficiency matters. Rejected for now: running real JavaScript, since it is harder to sandbox and less thematic.
 - **Proposed:** scripts are unlocked progressively (see Meta-progression): early runs force hand-typing; later runs unlock `repeat`, `on <event>`, `define`, so the player's *capability* grows, not just their stats.
 - Scripts run as background processes the player can list and stop. Idea: automation is what lets the player scale up, and it also creates new problems (see Corruption).
+
+**Update 2026-10-20: first-release direction.** Implementation slices are [`docs/specs/12-scripting-record-and-run.md`](specs/12-scripting-record-and-run.md) (specced) and [`docs/specs/13-scripting-language-and-queries.md`](specs/13-scripting-language-and-queries.md) (design needed, not ready to build).
+
+**Script types are a way to think, not a game mechanic (Decided).** Scripts can be grouped by what they do, which helps us see how scripting gets used and what to design for. The game does not know about the groups. There is one scripting language, and the **available commands decide what is possible**. Groups identified so far:
+
+- **Build automation:** wiring and piping new rooms, upgrading, and keeping the layout connected.
+- **Crew development:** training and assigning crew.
+- **Corruption control:** detecting corruption and alerting or fixing it. Needs more design; see below.
+- **Combat:** offensive and defensive behaviour.
+- **Also identified (Proposed ideas):** emergency playbooks that run when a wave warning fires and restore things afterwards; resource governors (load shedding, rerouting when a plant fails, keeping a stock above a threshold); expansion scripts that survey the frontier or sweep for the rival colony; compute governors that balance research, survey and scripts against capacity; scripted drones that repair, haul or scout (visible automation); and `simulate` or dry runs to test a script against a copy of the colony for a compute cost.
+- **Meta ideas (Proposed):** scripts saved across runs and unlocked through meta-progression, and shareable scripts with seeded daily runs scored by compute efficiency.
+
+**Every command must be scriptable (Decided).** Because commands define what scripts can do, each new command should succeed or fail in a predictable way a script can react to (the existing error messages already do this), and the game needs ways to **ask questions**, not only give orders. Build automation needs answers such as which reactor has spare power. How the player queries the colony is **Open** and is the subject of the language-and-queries spec.
+
+**Build automation is the first type players meet (Decided).** It is the easiest to show visually: a script wiring a new room is something the player can watch on the map. The intended ladder, each step adding one idea:
+
+1. **Record.** The player does something by hand, and the game saves it (`record <name>`, then `stop`).
+2. **Generalize.** The player replaces a fixed cell with a variable or a selector such as `nearest reactor`, so the script works on any room.
+3. **Trigger.** The player attaches the script to an event, such as `on build run <script>`, so every new room is wired automatically.
+
+Only step 1 is specced for implementation. Steps 2 and 3 depend on the language and query design, which is **deferred** on purpose.
+
+**Scripts and compute (Decided in principle).** A running script reserves compute capacity (see Structures, tiers and compute). The per-tick instruction budget idea above is that budget. Exact costs are placeholders in the spec.
+
+**Corruption control, needed work (Proposed directions).** Auto-fixing everything would defeat corruption's purpose, which is to keep hands on the keyboard. Ways around that:
+
+- Split it into **detect** and **fix**. Cheap detection scripts alert, and fixing minor corruption can be automated while major corruption stays manual.
+- Monitoring costs compute in proportion to how much is watched, so heavy monitoring has a price.
+- Corruption can hit the watching scripts themselves, so guarding scripts needs **checkpoints and rollback** (`checkpoint`, `restore`), a version-control idea that suits programmers.
 
 ### Threats and waves
 
@@ -226,6 +397,8 @@ A goal or mystery (for example a distress signal or an ancient structure) gives 
 
 **Decided.** The rival colony has an **aggression spectrum**: some are ravenous, war-hungry bandits; others focus on science and mostly keep to themselves. Whether it actively attacks and expands during the run or sits passively until struck is tied to this spectrum and not fully specified.
 
+**Decided (2026-10-20).** The rival colony sits on the larger map, far from the hub, and is **hidden until surveyed**. A Conquest run therefore needs a lot of surveying to find it before it can be attacked or absorbed. See "Map expansion and survey".
+
 ### Meta-progression
 
 **Decided.** Vampire Survivors-style permanent unlocks that make future runs stronger and easier. Each run earns a meta-currency based on survival time, happiness and milestones, spent on a between-run screen. Two kinds of unlock **(Proposed)**:
@@ -248,9 +421,10 @@ Text-only play risks fatigue, so small ASCII or GUI visualisations (maps, bars) 
 ### Suggested build order
 
 1. **Slice 1 (done):** layout, ticks, radius rules, basic commands, one economy, explicit wire/pipe, population growth.
-2. **Slice 2:** one wave type, turrets, simple scripts.
-3. **Slice 3:** happiness consequences, corruption.
-4. **Later:** enemy factions, win paths, meta-progression.
+2. **Structures track (planned):** categories, tiers and `upgrade`, compute capacity, the data link and network switch, `research`, multi-cell footprints, Mk3 buildings and the coolant link, the larger map and `survey`, then industry and the cargo link, then crew staffing and the academy. See [`docs/specs/`](specs/README.md). This runs alongside the slices below; the Defense category lands with Slice 2.
+3. **Slice 2:** one wave type, turrets, simple scripts. The first scripting step (record and run) is specced in [`docs/specs/12-scripting-record-and-run.md`](specs/12-scripting-record-and-run.md); the language and query design behind later steps is still open.
+4. **Slice 3:** happiness consequences, corruption.
+5. **Later:** enemy factions, win paths, meta-progression.
 
 ## Ideas under consideration
 
@@ -270,6 +444,10 @@ Work in progress. Nothing here is decided. Each entry records the problem, the o
 | Arrivals keep coming and want more | Pull | Colonists already arrive when there are free beds and happiness is at least 50. Arrival pace could rise over time, or later arrivals could need specific roles or rooms. | Needs a reason the player cannot just refuse arrivals. |
 | Goals and unlocks | Pull | The two win paths (Ascension, Conquest) and meta-progression unlocks only come from growth, so staying put means never winning or unlocking anything. | Needs the win paths to exist first. |
 
+**Related, now decided:** advanced structures unlocked through compute-based research (see "Structures, tiers and compute") are a pull toward growth, since Mk2 and Mk3 need materials and, for Mk3, spare space and a new link. The map-and-survey slice ([`docs/specs/08-map-and-survey.md`](specs/08-map-and-survey.md)) gives the colony somewhere to expand to, and the Industry slice (deposits, mines, cargo) is where finite resources are tested first; see [`docs/specs/09-industry-and-cargo.md`](specs/09-industry-and-cargo.md).
+
+**Update 2026-10-20: the expansion question is largely settled.** The colony expands onto a larger map that is revealed through play, using the `survey` command, which spends compute. See "Map expansion and survey" under Planned game design. The option of separate outpost grids is parked, not rejected. The open questions below that this resolves are marked.
+
 **Current leaning (Proposed).** Combine finite local resources with escalating waves, and use the win paths as the reason to care. Finite deposits give a specific, readable reason to expand ("the nearby ore is running out") instead of a vague timer. Waves keep the clock honest. Avoid leaning on upkeep alone.
 
 **Guardrails**
@@ -280,9 +458,9 @@ Work in progress. Nothing here is decided. Each entry records the problem, the o
 
 **Open questions**
 
-- **Where does the colony expand to?** The grid is a fixed 16 by 10. Options: reveal more map over time, or separate outpost grids linked by a command (something like `link`). This decision shapes everything else here, so settle it first.
-- Are deposits depleted by use, by time, or both? Can they be surveyed or prospected with a command?
-- Does a second site need its own hub, or just a reactor and a connection back?
+- **Where does the colony expand to?** *Resolved (2026-10-20): a larger map revealed through `survey`. Separate outpost grids are parked as a later idea.* Original question: the grid is a fixed 16 by 10. Options were: reveal more map over time, or separate outpost grids linked by a command (something like `link`).
+- Are deposits depleted by use, by time, or both? *Partly resolved: they are surveyed with `survey`. Depletion by use is the working assumption; see the Industry spec.*
+- Does a second site need its own hub, or just a reactor and a connection back? *Mostly resolved for now: with one larger map, there is a single hub, and far sites reach it through relays such as network switches. Revisit if outposts return.*
 - How do the status commands show a running-out resource? (`status materials` already forecasts affordability, and could forecast depletion.)
 
 ## Small tasks not built yet
