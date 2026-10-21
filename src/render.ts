@@ -412,6 +412,15 @@ function drawIcon(ctx: CanvasRenderingContext2D, type: RoomType, r: number, colo
       }
       break;
     }
+    case 'switch': { // network hub: a centre node with four spokes
+      for (let i = 0; i < 4; i++) {
+        const a = Math.PI / 4 + (Math.PI / 2) * i;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r * 0.85, Math.sin(a) * r * 0.85); ctx.stroke();
+        ctx.beginPath(); ctx.arc(Math.cos(a) * r * 0.85, Math.sin(a) * r * 0.85, r * 0.17, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.3 + (active ? Math.sin(t / 400) * r * 0.04 : 0), 0, Math.PI * 2); ctx.fill();
+      break;
+    }
     case 'lounge': { // star
       ctx.beginPath();
       for (let i = 0; i < 10; i++) {

@@ -1,7 +1,7 @@
 export const COLS = 16;
 export const ROWS = 10;
 
-export type RoomType = 'hub' | 'reactor' | 'oxygen' | 'garden' | 'quarters' | 'lounge' | 'rack';
+export type RoomType = 'hub' | 'reactor' | 'oxygen' | 'garden' | 'quarters' | 'lounge' | 'rack' | 'switch';
 
 /** Filing and browsing groups for room types. Never changes how a room is built. */
 export type Category = 'power' | 'life' | 'food' | 'habitat' | 'industry' | 'compute' | 'defense' | 'maint';
@@ -33,10 +33,11 @@ export const ROOM_DEFS: Record<RoomType, RoomDef> = {
   garden: { category: 'food', label: 'Hydroponics', color: '#7ad97a', cost: 25, draw: 2, radius: 0, desc: 'Needs power. Grows 2 food per tick.' },
   quarters: { category: 'habitat', label: 'Quarters', color: '#c19cf5', cost: 20, draw: 1, radius: 0, desc: 'Needs a power wire and an air pipe. Houses 2 colonists, and draws new arrivals.' },
   rack: { category: 'compute', label: 'Server Rack', color: '#d9e86b', cost: 35, draw: 2, radius: 0, desc: 'Needs power and a data link. Produces 4 compute capacity. Use "wire" for power and "net" for data.' },
+  switch: { category: 'compute', label: 'Network Switch', color: '#ff8f6b', cost: 20, draw: 1, radius: 4, desc: 'Needs power and a data link from the hub or another switch. Relays data to racks and switches within its radius (4 ports). Use "net" to link rooms from it.' },
   lounge: { category: 'habitat', label: 'Lounge', color: '#f58cb4', cost: 30, draw: 2, radius: 3, desc: 'Needs power. Quarters within its radius get a happiness boost.' },
 };
 
-export const BUILDABLE: RoomType[] = ['reactor', 'oxygen', 'garden', 'quarters', 'lounge', 'rack'];
+export const BUILDABLE: RoomType[] = ['reactor', 'oxygen', 'garden', 'quarters', 'lounge', 'rack', 'switch'];
 
 /** Buildable room types in a category, in build order. */
 export const typesIn = (c: Category): RoomType[] => BUILDABLE.filter((t) => ROOM_DEFS[t].category === c);
@@ -69,6 +70,7 @@ const MK1_EXTRA: Partial<Record<RoomType, Partial<TierStats>>> = {
   hub: { radius: 5, ports: 6 },
   reactor: { output: 12 },
   rack: { output: 4 },
+  switch: { ports: 4 },
   oxygen: { output: 3, pipes: 4 },
   garden: { output: 2 },
   quarters: { beds: 2 },
@@ -214,10 +216,10 @@ export function roomById(s: State, id: number | null): Room | undefined {
 export const needsPower = (t: RoomType): boolean => ROOM_DEFS[t].draw > 0;
 
 /** Rooms that need a data link to work (racks for now; turrets and Mk3 rooms later). */
-export const needsData = (t: RoomType): boolean => t === 'rack';
+export const needsData = (t: RoomType): boolean => t === 'rack' || t === 'switch';
 
-/** Rooms that can feed a data link (the hub for now; network switches in a later slice). */
-export const isDataSource = (t: RoomType): boolean => t === 'hub';
+/** Rooms that can feed a data link: the hub (the root) and network switches (relays). */
+export const isDataSource = (t: RoomType): boolean => t === 'hub' || t === 'switch';
 
 export function newState(): State {
   const cx = Math.floor(COLS / 2);
@@ -301,17 +303,29 @@ export function recompute(s: State): void {
   s.powerSupply = reactors.reduce((n, x) => n + statsOf(x).output, 0);
   s.powerDemand = demand;
 
-  // Data links: a rack's link works when its source is in range and has a free port.
+  // Data links. A link works when its source is online (the hub, or a switch that is powered and has
+  // its own working link back to the hub), the room is in range, and the source has a free port.
+  // Sources come online in passes, so a switch cut off from the hub, or two switches linked to
+  // each other, never work.
   const ports = new Map<number, number>();
   let compute = 0;
-  for (const r of s.rooms) {
-    if (!needsData(r.type)) continue;
+  const consumers = s.rooms.filter((r) => needsData(r.type));
+  for (const r of consumers) {
     r.data = false;
-    const src = s.rooms.find((x) => isDataSource(x.type) && x.id === r.dataFrom);
-    if (!src) { r.dataFrom = null; continue; }
-    if (dist(r, src) > statsOf(src).radius || (ports.get(src.id) ?? 0) >= statsOf(src).ports) continue;
-    ports.set(src.id, (ports.get(src.id) ?? 0) + 1);
-    r.data = true;
+    if (r.dataFrom !== null && !s.rooms.some((x) => isDataSource(x.type) && x.id === r.dataFrom)) r.dataFrom = null;
+  }
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const r of consumers) {
+      if (r.data) continue;
+      const src = s.rooms.find((x) => x.id === r.dataFrom);
+      if (!src || src === r) continue;
+      const online = src.type === 'hub' || (src.powered && src.data);
+      if (!online || dist(r, src) > statsOf(src).radius || (ports.get(src.id) ?? 0) >= statsOf(src).ports) continue;
+      ports.set(src.id, (ports.get(src.id) ?? 0) + 1);
+      r.data = true;
+      changed = true;
+    }
   }
   for (const r of s.rooms) if (r.type === 'rack' && r.powered && r.data) compute += statsOf(r).output;
   s.computeSupply = compute;

@@ -63,6 +63,7 @@ A real-time colony survival sim played mostly through a **command line**. The pl
 | Quarters | 20 | 1 | — | Needs a power wire and an air pipe. Houses 2. Draws new arrivals. |
 | Lounge | 30 | 2 | 3 | Needs power. Quarters within its radius get a happiness boost. |
 | Server Rack | 35 | 2 | — | Needs power and a data link. Produces 4 compute capacity. Mk2: 6 capacity, draw 3, upgrade 20. **Implemented (Slice 3).** |
+| Network Switch | 20 | 1 | data 4 | Needs power and a data link. Relays data to up to 4 racks or switches in its data radius. Works only while it is powered and has a working link back to the hub; chains are allowed. No Mk2. **Implemented (Slice 4).** |
 
 Distance is straight-line (Euclidean) between cell centres. A wire is "working" only if the room is in the reactor's radius and the reactor has spare capacity; a pipe is working only if the plant is powered, the quarters are in radius, and the plant has fewer than 4 pipes in use.
 
@@ -87,7 +88,7 @@ Flags can be abbreviated: `-loc`/`-l` for `-location`, `-f`/`-src` for `-from`, 
 - `build <type> -location <cell>` — spend materials to build. Warns if the new room still needs wiring or piping.
 - `wire -from <reactor> -to <room>` / `unwire -to <room>` — power lines.
 - `pipe -from <oxygen plant> -to <quarters>` / `unpipe -to <quarters>` — air pipes.
-- `net -from <hub> -to <rack>` / `unnet -to <rack>` — data links (violet on the map). The hub is the only data source until the network switch (Slice 4). A rack produces compute only with power **and** data. **Implemented (Slice 3).**
+- `net -from <hub> -to <rack>` / `unnet -to <rack>` — data links (violet on the map). Sources are the hub and network switches; a link works only while its source is online (the hub, or a powered switch with its own working link back to the hub), the room is in range and the source has a free port. A rack produces compute only with power **and** data. **Implemented (Slices 3 and 4).**
 - `status compute` — graph of compute capacity, used and free, and each rack's state with the fix. The plain `status` and the HUD show a Compute line once a rack exists. History samples include `computeSupply` and `computeUsed`.
 - `upgrade` / `upgrade -location <cell>` — list upgradable rooms, or upgrade one from Mk1 to Mk2 in place (cost and Mk2 stats in API.md, Tiers). A broken room can be upgraded but stays broken; an upgrade that raises power draw is refused if the reactor lacks spare power. **Implemented (Slice 2).**
 - `demolish -location <cell>` — refunds 50% of everything spent on the room (build plus upgrade). The hub cannot be demolished.
@@ -199,7 +200,7 @@ Early tiers should need at most one new link type each, so typing load stays low
 **Data network (Decided: hub as root; switch Proposed).**
 
 - The Command Hub is the root of the data network. Anything that needs a data link must reach the hub, directly or through relays.
-- **Network switch (Proposed):** a compute-category room that needs power, relays data to rooms within its own radius, and has a port limit (like the oxygen plant's 4 pipes). It lets the player plan the colony in sections without running data across the whole map. It is also a wave target: losing a switch cuts a whole section off.
+- **Network switch (Implemented 2026-10-20, Slice 4):** a compute-category room that needs power, relays data to rooms within its own radius, and has a port limit (like the oxygen plant's 4 pipes). It lets the player plan the colony in sections without running data across the whole map. It is also a wave target: losing a switch cuts a whole section off.
 
 **Proposed category contents (baseline).** Mk1 and Mk2 are in place; Mk3 is a new building. Names are placeholders. This is the minimum set; the variety principle below adds more Mk1 rooms to the categories that need them.
 
