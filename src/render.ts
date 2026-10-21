@@ -10,7 +10,7 @@ export interface View {
    * or null while it is missing or unparseable, in which case the hovered cell is used.
    */
   ghost: { type: RoomType; at: { x: number; y: number } | null } | null;
-  /** Set by `view <room type>`: rooms of other types (and their links) dim. Inspect focus takes precedence. */
+  /** Set by `view <room type>`: rooms of other types (and their links) dim. The newest of view and inspect wins: each clears the other. */
   highlight: RoomType[] | null;
   /** Wire or pipe being typed with both -from and -to set; `valid` is false if it would be refused. */
   linkGhost: { kind: 'wire' | 'pipe'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null;

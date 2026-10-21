@@ -111,7 +111,7 @@ Note: `status` is the colony-wide overview. `inspect` is the per-structure statu
 
 ### Connection highlight
 
-After `inspect` on a room, that room, its wires and pipes (in and out), and the rooms on the far ends stay lit. Everything else dims to about 22% opacity but stays visible. The highlight stays until another `inspect`, `inspect reset`, inspecting empty space, or `demolish`. Other commands leave it alone. The dim level is the `DIM` constant in `render.ts`.
+After `inspect` on a room, that room, its wires and pipes (in and out), and the rooms on the far ends stay lit. Everything else dims to about 22% opacity but stays visible. The highlight stays until another `inspect`, `inspect reset`, inspecting empty space, or `demolish`. A `view` highlight (room type or category) also clears it, and `inspect` on a room clears any `view` highlight: the newest of the two wins (decided 2026-10-20). Other commands leave it alone. The dim level is the `DIM` constant in `render.ts`.
 
 ### Keyboard map cursor and autofill
 
@@ -136,7 +136,7 @@ Decision: clicking a cell only targets it, exactly as if the cursor had been mov
   - `view zoom <in|out> [steps]` zooms about the centre of the panel; each step is 1.25x, default 1, max 10.
   - `view pan <up|down|left|right> [cells]` moves the camera, so `left` shows what is to the left. Default 2 cells, max 50. Cells scale with the zoom.
   - `view reset` restores the fit-everything view and clears any highlight.
-  - `view <room type>` (also the plural, e.g. `view gardens`) lights up every room of that type and dims the other rooms and links, then lists the cells. Types: hub, reactor, oxygen, garden, quarters, lounge. Nothing built of that type clears it with a warning. The highlight stays until `view reset`. `inspect` focus takes precedence while it is active.
+  - `view <room type>` (also the plural, e.g. `view gardens`) lights up every room of that type and dims the other rooms and links, then lists the cells. Types: hub, reactor, oxygen, garden, quarters, lounge. Nothing built of that type clears it with a warning. The highlight stays until `view reset`, another `view`, or an `inspect` on a room (the newest command wins; each clears the other). `view reset` also clears an `inspect` focus.
   - Commands report camera and highlight changes through a `view` field on `CommandResult` (`ViewAction` in `commands.ts`); `main.ts` applies it to the renderer.
 - Wires are amber, pipes are cyan. Working links animate as moving dashes; broken ones are dotted red.
 - Rooms with missing power or air pulse red and show a bolt or droplet badge.

@@ -449,7 +449,7 @@ Behaviour:
   - Quarters: air status (`NOT PIPED`, flowing, or piped but unsupplied) and number of lounges in range
 - **On an empty cell**, prints `<cell>: empty space.` and clears the highlight.
 - Moves the map cursor to the cell and **highlights the room's connections**: its wires and pipes (in and out) and the rooms at the far ends stay lit while the rest of the map dims.
-- The highlight persists until you run another `inspect`, `inspect reset`, inspect an empty cell, or `demolish`.
+- The highlight persists until you run another `inspect`, `inspect reset`, inspect an empty cell, `demolish`, or a `view` that highlights (`view <room type>`, `view <category>`, `view reset`). Inspecting a room also clears any `view` highlight: the newest command wins.
 - `inspect reset` prints `Map highlight cleared.`
 
 Errors: if no valid cell is given, `Usage: inspect -location <cell>   e.g. inspect -location B4` (or the invalid-cell message).
@@ -529,9 +529,9 @@ Controls the map camera and highlight. None of it affects the simulation. Has no
 |---|---|---|
 | `view zoom in` / `view zoom out` | `steps`: optional positive number, default `1`, max `10` | Zooms about the centre of the map panel. Each step is 1.25x. Zoom is limited to 0.5x-4x of the fit-everything size. |
 | `view pan <direction>` | `direction`: `up`, `down`, `left` or `right`. `cells`: optional positive number, default `2`, max `50` | Moves the camera, so `left` shows what lies to the left. Distance is in cells at the current zoom. The map cannot be panned fully off screen. |
-| `view <room type>` | `hub`, `reactor`, `oxygen`, `garden`, `quarters` or `lounge`; plurals such as `gardens` also work | Lights up every room of that type, dims the other rooms and the links, and lists the matching cells. If none are built it prints a warning and clears any highlight. `inspect` focus takes precedence while active. |
+| `view <room type>` | `hub`, `reactor`, `oxygen`, `garden`, `quarters` or `lounge`; plurals such as `gardens` also work | Lights up every room of that type, dims the other rooms and the links, and lists the matching cells. If none are built it prints a warning and clears any highlight. It also clears an `inspect` focus (the newest command wins). |
 | `view <category>` | `power`, `life`, `food`, `habitat` (and later categories once they hold rooms) | Same as `view <room type>`, but for every room in the category. Prints a warning and clears the highlight if none are built. |
-| `view reset` | none | Restores the fit-everything view and clears the highlight. |
+| `view reset` | none | Restores the fit-everything view and clears any highlight, including an `inspect` focus. |
 
 Errors: `Usage: view zoom <in|out> [steps]`, `Usage: view pan <up|down|left|right> [cells]`, `Steps must be a number from above 0 to 10.`, `Cells must be a number from above 0 to 50.`, `Unknown view option "<text>". ...`
 

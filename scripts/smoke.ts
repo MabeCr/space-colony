@@ -27,6 +27,20 @@ const run = (s: State, ...lines: string[]): void => { for (const l of lines) exe
   check('view <category> highlights', (execute(s, 'view life').view?.highlight ?? []).includes('oxygen'));
 }
 
+// --- view and inspect: the newest command wins ------------------------------------------------
+{
+  const s = newState();
+  const ins = execute(s, 'inspect h6');
+  check('inspect on a room sets focus and clears a view highlight', ins.focus?.x === 7 && ins.view?.highlight === null);
+  const emptyInspect = execute(s, 'inspect a1');
+  check('inspect on empty space leaves a view highlight alone', emptyInspect.view === undefined && emptyInspect.focus === null);
+  check('view <type> clears inspect focus', execute(s, 'view reactor').focus === null);
+  check('view <category> clears inspect focus', execute(s, 'view life').focus === null);
+  check('view with nothing built clears inspect focus', execute(s, 'view defense').focus === null);
+  check('view reset clears inspect focus', execute(s, 'view reset').focus === null);
+  check('view zoom leaves inspect focus alone', execute(s, 'view zoom in').focus === undefined);
+}
+
 // --- Slice 2: tier stats ----------------------------------------------------------------
 {
   const mk1 = statsAt('reactor', 1);

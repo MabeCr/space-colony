@@ -579,7 +579,7 @@ export const COMMANDS: Record<string, Command> = {
         lines.push(r.airFrom === null ? warn('  Air: NOT PIPED') : r.breathable ? info(`  Air: flowing (plant at ${coord(src!.x, src!.y)})`) : warn('  Air: piped, but no supply (plant unpowered, out of range, or full)'));
         lines.push(info(`  Lounges in range: ${r.loungeCount}`));
       }
-      return { lines, select: p, focus: p };
+      return { lines, select: p, focus: p, view: { highlight: null } };
     },
   },
   rooms: {
@@ -621,7 +621,7 @@ export const COMMANDS: Record<string, Command> = {
     usage: 'view zoom <in|out> [steps] | view pan <up|down|left|right> [cells] | view <room type or category> | view reset',
     summary: 'Zoom, pan, or highlight the map by room type or category. "reset" restores the full view and clears any highlight.',
     run: (s, { pos: [sub, a, b] }) => {
-      if (sub === 'reset') return { lines: [ok('View reset.')], view: { reset: true, highlight: null } };
+      if (sub === 'reset') return { lines: [ok('View reset.')], view: { reset: true, highlight: null }, focus: null };
 
       if (sub === 'zoom') {
         if (a !== 'in' && a !== 'out') return err('Usage: view zoom <in|out> [steps]');
@@ -644,17 +644,17 @@ export const COMMANDS: Record<string, Command> = {
         const type = ROOM_TYPES.find((t) => t === sub || t + 's' === sub);
         if (type) {
           const found = s.rooms.filter((r) => r.type === type);
-          if (!found.length) return { lines: [warn(`No ${ROOM_DEFS[type].label} built.`)], view: { highlight: null } };
+          if (!found.length) return { lines: [warn(`No ${ROOM_DEFS[type].label} built.`)], view: { highlight: null }, focus: null };
           const cells = found.map((r) => coord(r.x, r.y)).join(', ');
-          return { lines: [ok(`Highlighting ${found.length} ${ROOM_DEFS[type].label}: ${cells}. "view reset" clears it.`)], view: { highlight: [type] } };
+          return { lines: [ok(`Highlighting ${found.length} ${ROOM_DEFS[type].label}: ${cells}. "view reset" clears it.`)], view: { highlight: [type] }, focus: null };
         }
         // "view habitat": light up every room in that category.
         if (isCategory(sub)) {
           const types = ROOM_TYPES.filter((t) => ROOM_DEFS[t].category === sub);
           const found = s.rooms.filter((r) => types.includes(r.type));
-          if (!found.length) return { lines: [warn(`No ${CATEGORY_LABELS[sub]} rooms built.`)], view: { highlight: null } };
+          if (!found.length) return { lines: [warn(`No ${CATEGORY_LABELS[sub]} rooms built.`)], view: { highlight: null }, focus: null };
           const cells = found.map((r) => coord(r.x, r.y)).join(', ');
-          return { lines: [ok(`Highlighting ${found.length} ${CATEGORY_LABELS[sub]} room${found.length === 1 ? '' : 's'}: ${cells}. "view reset" clears it.`)], view: { highlight: types } };
+          return { lines: [ok(`Highlighting ${found.length} ${CATEGORY_LABELS[sub]} room${found.length === 1 ? '' : 's'}: ${cells}. "view reset" clears it.`)], view: { highlight: types }, focus: null };
         }
         return err(`Unknown view option "${sub}". Try: zoom, pan, reset, a room type (${ROOM_TYPES.join(', ')}) or a category (${categoryNames()}).`);
       }
