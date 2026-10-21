@@ -18,7 +18,8 @@ export interface View {
 
 /**
  * Capacity dots fade in as the cell size grows from the first value to the second (pixels), so they
- * appear when you zoom in and fade out when you zoom out. The hovered or selected room always shows them.
+ * appear when you zoom in and fade out when you zoom out. The icons of rooms with dots lift and shrink by
+ * the same amount, so zoomed out they sit centred. The hover label has the numbers at any zoom.
  */
 const DOTS_FADE_FROM = 48;
 const DOTS_FADE_TO = 66;
@@ -240,10 +241,9 @@ export class Renderer {
       const y = oy + r.y * cell + 3;
       const sz = cell - 6;
       const base = (fr ? lit.has(r.id) : !v.highlight || v.highlight.includes(r.type)) ? 1 : DIM;
-      this.tile(r.type, r.x, r.y, (dead ? 0.55 : 1) * base, dead ? `rgba(255, 90, 90, ${0.5 + 0.5 * pulse})` : def.color, t, !dead, r.tier, hasCapacity(r.type));
+      this.tile(r.type, r.x, r.y, (dead ? 0.55 : 1) * base, dead ? `rgba(255, 90, 90, ${0.5 + 0.5 * pulse})` : def.color, t, !dead, r.tier, hasCapacity(r.type) ? dotFade : 0);
       const cap = capacityOf(s, r);
-      const shown = v.hover && v.hover.x === r.x && v.hover.y === r.y || v.selected && v.selected.x === r.x && v.selected.y === r.y;
-      if (cap) this.capacity(r, cap, (shown ? 1 : dotFade) * base * (dead ? 0.55 : 1));
+      if (cap) this.capacity(r, cap, dotFade * base * (dead ? 0.55 : 1));
       ctx.globalAlpha = base;
       // Badges for what's missing: a bolt for power, a droplet for air.
       let bx = x + sz - 7;
@@ -254,7 +254,7 @@ export class Renderer {
     }
 
     // Translucent preview of the room about to be built.
-    if (v.ghost && ghostAt && ghostOpen) this.tile(v.ghost.type, ghostAt.x, ghostAt.y, GHOST_ALPHA, ROOM_DEFS[v.ghost.type].color, t, true, 1, hasCapacity(v.ghost.type));
+    if (v.ghost && ghostAt && ghostOpen) this.tile(v.ghost.type, ghostAt.x, ghostAt.y, GHOST_ALPHA, ROOM_DEFS[v.ghost.type].color, t, true, 1, hasCapacity(v.ghost.type) ? dotFade : 0);
     ctx.globalAlpha = 1;
 
     if (v.selected) this.box(v.selected.x, v.selected.y, '#ffffff', 0.9);
@@ -275,7 +275,7 @@ export class Renderer {
   }
 
   /** A room's rounded tile and icon at a cell, drawn at the given opacity. Leaves globalAlpha changed. */
-  private tile(type: RoomType, cx: number, cy: number, alpha: number, stroke: string, t: number, active: boolean, tier = 1, withCapacity = false): void {
+  private tile(type: RoomType, cx: number, cy: number, alpha: number, stroke: string, t: number, active: boolean, tier = 1, capLift = 0): void {
     const { ctx } = this;
     const { cell, ox, oy } = this.geo;
     const x = ox + cx * cell + 3;
@@ -297,8 +297,9 @@ export class Renderer {
     }
     ctx.save();
     // Rooms with a capacity row draw a slightly smaller icon, nudged up to leave room for the dots.
-    ctx.translate(x + sz / 2, y + sz / 2 - (withCapacity ? sz * 0.09 : 0));
-    drawIcon(ctx, type, sz * (withCapacity ? 0.3 : 0.36), color, t, active);
+    // capLift (0 to 1) follows the dots' zoom fade, so zoomed out the icon sits centred at full size.
+    ctx.translate(x + sz / 2, y + sz / 2 - sz * 0.09 * capLift);
+    drawIcon(ctx, type, sz * (0.36 - 0.06 * capLift), color, t, active);
     ctx.restore();
   }
 
