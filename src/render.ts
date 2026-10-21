@@ -24,6 +24,9 @@ export interface View {
 const DOTS_FADE_FROM = 48;
 const DOTS_FADE_TO = 66;
 
+/** Cell size (pixels) the status badges were drawn for; they scale from here. */
+const BADGE_REF_CELL = 46;
+
 const RED = '#ff6b6b';
 const CAPACITY_COLORS: Record<Capacity['resource'], string> = { data: '#b18cff', air: '#5ad1e6', beds: '#c19cf5', power: '#f7b955' };
 
@@ -246,10 +249,12 @@ export class Renderer {
       if (cap) this.capacity(r, cap, dotFade * base * (dead ? 0.55 : 1));
       ctx.globalAlpha = base;
       // Badges for what's missing: a bolt for power, a droplet for air.
-      let bx = x + sz - 7;
-      if (noPower) { badge(ctx, bx, y + 7, 'bolt', '#f7b955'); bx -= 14; }
-      if (noAir) { badge(ctx, bx, y + 7, 'drop', '#5ad1e6'); bx -= 14; }
-      if (noData) badge(ctx, bx, y + 7, 'data', '#b18cff');
+      // Badges scale with the cell so they keep their size relative to the tile at any zoom.
+      const bk = cell / BADGE_REF_CELL;
+      let bx = x + sz - 7 * bk;
+      if (noPower) { badge(ctx, bx, y + 7 * bk, 'bolt', '#f7b955', bk); bx -= 14 * bk; }
+      if (noAir) { badge(ctx, bx, y + 7 * bk, 'drop', '#5ad1e6', bk); bx -= 14 * bk; }
+      if (noData) badge(ctx, bx, y + 7 * bk, 'data', '#b18cff', bk);
       ctx.globalAlpha = 1;
     }
 
@@ -495,9 +500,10 @@ function drawIcon(ctx: CanvasRenderingContext2D, type: RoomType, r: number, colo
   }
 }
 
-function badge(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'bolt' | 'drop' | 'data', color: string): void {
+function badge(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'bolt' | 'drop' | 'data', color: string, scale = 1): void {
   ctx.save();
   ctx.translate(x, y);
+  ctx.scale(scale, scale);
   ctx.fillStyle = '#0b0f1e';
   ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = '#ff6b6b';
