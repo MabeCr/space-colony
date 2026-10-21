@@ -25,7 +25,7 @@ A real-time colony survival sim played mostly through a **command line**. The pl
 
 **Tower defense (decided, partial).** Tower-defense style defense is part of the game, built into the colony fantasy, but explicitly *not* all of it. Waves are one of several pressures alongside oxygen, food, power, morale and slow-burn failures.
 
-- Name: the repo and package are `space-colony`. The in-game banner and page title still say "Station Shell" (not yet renamed).
+- Name: the repo and package are `space-colony`. The page title is now "Space Colony".
 - License: **GPL-3.0**, chosen on purpose so nobody can take the code and release it closed-source.
 - Time cannot be paused. It can only be slowed (`speed 1 | 1/2 | 1/4`).
 
@@ -162,6 +162,7 @@ Agreed in design discussion on 2026-10-19. Nothing here is built. Implementation
 - `build` alone lists the categories; `build <category>` lists the types in it with cost, tier and lock status. Locked types are shown with their unlock requirement so the player can plan ahead.
 - `view <category>` lights up every room in the category, the way `view <room type>` does now.
 - `help` and Tab completion group by category.
+- **Implemented 2026-10-20 (Slice 1).** Empty categories are hidden from the `build` list; `build <empty category>` says nothing is available yet. `rooms` stays ungrouped. Every command also now carries an `action`, `query` or `ui` tag (required by the type system) for the scripting slices.
 - Category names must not collide with room type names (the life support category is `life`, because `oxygen` is already a room type). Category names are `power`, `life`, `food`, `habitat`, `industry`, `compute`, `defense`, `maint`.
 - Categories may later carry real mechanics (research grouping, wave targeting, corruption weighting), but that is a separate decision and is **Open**.
 
@@ -466,7 +467,6 @@ Work in progress. Nothing here is decided. Each entry records the problem, the o
 ## Small tasks not built yet
 
 - Custom scripts (from the README) — see "Scripting" above for the direction; no detailed design.
-- Rename the in-game title from "Station Shell" to Space Colony.
 - Optional: add `"license": "GPL-3.0-only"` to `package.json`.
 - Optional: clear the connection highlight automatically when the layout changes (`build`, `wire`, `pipe`).
 - Optional: make click-to-inspect still happen when the command line is empty.

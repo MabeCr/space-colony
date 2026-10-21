@@ -11,7 +11,7 @@ export interface View {
    */
   ghost: { type: RoomType; at: { x: number; y: number } | null } | null;
   /** Set by `view <room type>`: rooms of other types (and their links) dim. Inspect focus takes precedence. */
-  highlight: RoomType | null;
+  highlight: RoomType[] | null;
   /** Wire or pipe being typed with both -from and -to set; `valid` is false if it would be refused. */
   linkGhost: { kind: 'wire' | 'pipe'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null;
 }
@@ -217,7 +217,7 @@ export class Renderer {
       const x = ox + r.x * cell + 3;
       const y = oy + r.y * cell + 3;
       const sz = cell - 6;
-      const base = (fr ? lit.has(r.id) : !v.highlight || r.type === v.highlight) ? 1 : DIM;
+      const base = (fr ? lit.has(r.id) : !v.highlight || v.highlight.includes(r.type)) ? 1 : DIM;
       this.tile(r.type, r.x, r.y, (dead ? 0.55 : 1) * base, dead ? `rgba(255, 90, 90, ${0.5 + 0.5 * pulse})` : def.color, t, !dead);
       ctx.globalAlpha = base;
       // Badges for what's missing: a bolt for power, a droplet for air.
