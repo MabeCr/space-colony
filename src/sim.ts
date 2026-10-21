@@ -358,6 +358,47 @@ export function housingSlots(s: State): Room[] {
   return slots;
 }
 
+/** How much of a room's limited resource is spent: ports, pipes, beds or power. */
+export interface Capacity {
+  resource: 'data' | 'air' | 'beds' | 'power';
+  /** Short word for text: "ports", "pipes", "beds", "load". */
+  label: string;
+  used: number;
+  total: number;
+  /** Of the used, how many are recorded but not delivering (shown red). */
+  broken: number;
+  /** True when the whole resource is unavailable (quarters without power or air). */
+  offline: boolean;
+}
+
+/** Room types that have a capacity to show. The hub is left out on purpose. */
+export const hasCapacity = (t: RoomType): boolean => t === 'switch' || t === 'oxygen' || t === 'quarters' || t === 'reactor';
+
+/** Capacity of a room, or null if it has none. Each new limited resource is declared here. */
+export function capacityOf(s: State, r: Room): Capacity | null {
+  const st = statsOf(r);
+  if (r.type === 'switch') {
+    const linked = s.rooms.filter((x) => x.dataFrom === r.id);
+    return { resource: 'data', label: 'ports', used: linked.length, total: st.ports, broken: linked.filter((x) => !x.data).length, offline: false };
+  }
+  if (r.type === 'oxygen') {
+    const piped = s.rooms.filter((x) => x.airFrom === r.id);
+    return { resource: 'air', label: 'pipes', used: piped.length, total: st.pipes, broken: piped.filter((x) => !x.breathable).length, offline: false };
+  }
+  if (r.type === 'quarters') {
+    const slots = housingSlots(s);
+    const housed = Math.min(s.crew.length, slots.length);
+    let used = 0;
+    for (let i = 0; i < housed; i++) if (slots[i] === r) used++;
+    return { resource: 'beds', label: 'beds', used, total: st.beds, broken: 0, offline: !(r.powered && r.breathable) };
+  }
+  if (r.type === 'reactor') return { resource: 'power', label: 'load', used: reactorLoad(s, r.id), total: st.output, broken: 0, offline: false };
+  return null;
+}
+
+/** "ports 1/4", with "(offline)" when the resource cannot be used. */
+export const capacityText = (c: Capacity): string => `${c.label} ${c.used}/${c.total}${c.offline ? ' (offline)' : ''}`;
+
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 function newColonist(s: State): Colonist {

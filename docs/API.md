@@ -542,7 +542,7 @@ inspect reset
 rooms
 ```
 
-No parameters. Lists every room as `<cell>  <label>`, with a bracketed problem list on rooms that are not working (shown as warnings):
+No parameters. Lists every room as `<cell>  <label>`, then (for rooms with a limit) how much of it is used (`ports 1/4`, `pipes 3/4`, `beds 2/3`, `load 9/12`; quarters without power or air add `(offline)`), then a bracketed problem list on rooms that are not working (shown as warnings):
 
 | Flag shown | Meaning |
 |---|---|

@@ -1,6 +1,6 @@
 // Headless checks of game behaviour: runs real commands against the sim, no browser needed.
 // Run with: npm run smoke   (exits with an error if any check fails)
-import { housingSlots, newState, roomAt, parseCoord, statsAt, statsOf, step, type Room, type State } from '../src/sim';
+import { capacityOf, capacityText, hasCapacity, housingSlots, newState, roomAt, parseCoord, statsAt, statsOf, step, type Room, type State } from '../src/sim';
 import { COMMANDS, execute, linkPreview, suggest } from '../src/commands';
 
 let failed = 0;
@@ -327,11 +327,11 @@ const base = (): State => {
   check('build compute lists the switch', text(s, 'build compute').includes('switch') && text(s, 'build compute').includes('Network Switch'), text(s, 'build compute'));
   const built = execute(s, 'build switch -l i4');
   check('build switch warns about wire and data', built.lines.filter((l) => l.kind === 'warn').map((l) => l.text).join(' | ').includes('No data yet'));
-  check('switch flags: not wired and not networked', /i4\s+Network Switch\s+\[NOT WIRED, NOT NETWORKED\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  check('switch flags: not wired and not networked', /i4\s+Network Switch\s+ports \d+\/\d+\s+\[NOT WIRED, NOT NETWORKED\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
   run(s, 'wire -f h6 -t i4');
   check('wired but unlinked switch is still not networked', text(s, 'rooms').includes('NOT NETWORKED'));
   check('hub links the switch', text(s, 'net -f i6 -t i4').startsWith('Linked data'));
-  check('switch is operational', /i4\s+Network Switch\s+\[OPERATIONAL\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  check('switch is operational', /i4\s+Network Switch\s+ports \d+\/\d+\s+\[OPERATIONAL\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
   const si = text(s, 'inspect i4');
   check('inspect switch shows ports and hub connection', si.includes('Data ports: 0 / 4') && si.includes('Data radius: 4') && si.includes('connected to the hub'), si);
   check('hub counts the switch as a port', text(s, 'inspect i6').includes('Data ports: 1 / 6'));
@@ -351,14 +351,14 @@ const base = (): State => {
 
   run(s, 'unwire -t l6');
   check('unwiring the switch cuts everything behind it', s.computeSupply === 0 && /o6\s+Server Rack\s+\[NO DATA\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
-  check('the cut-off switch is flagged', /l6\s+Network Switch\s+\[NOT WIRED\]/i.test(text(s, 'rooms')));
+  check('the cut-off switch is flagged', /l6\s+Network Switch\s+ports \d+\/\d+\s+\[NOT WIRED\]/i.test(text(s, 'rooms')));
   check('the link stays recorded', room(s, 'o6').dataFrom === room(s, 'l6').id);
   check('status compute explains a cut-off rack', text(s, 'status compute').includes('Everything behind it has no data') && text(s, 'status compute').includes('cut off from the hub'), text(s, 'status compute'));
   run(s, 'wire -f m5 -t l6');
   check('rewiring the switch restores it', s.computeSupply === 4);
 
   run(s, 'unnet -t l6');
-  check('unlinking the switch cuts the rack, keeping its link', s.computeSupply === 0 && room(s, 'o6').dataFrom !== null && /o6\s+Server Rack\s+\[NO DATA\]/i.test(text(s, 'rooms')) && /l6\s+Network Switch\s+\[NOT NETWORKED\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  check('unlinking the switch cuts the rack, keeping its link', s.computeSupply === 0 && room(s, 'o6').dataFrom !== null && /o6\s+Server Rack\s+\[NO DATA\]/i.test(text(s, 'rooms')) && /l6\s+Network Switch\s+ports \d+\/\d+\s+\[NOT NETWORKED\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
   check('status alerts lists both', text(s, 'status alerts').includes('Network Switch at L6') && text(s, 'status alerts').includes('Server Rack at O6'), text(s, 'status alerts'));
   run(s, 'net -f i6 -t l6');
   check('relinking restores everything', s.computeSupply === 4);
@@ -392,7 +392,7 @@ const base = (): State => {
   check('rack behind the chain links', text(s, 'net -f p6 -t p4').startsWith('Linked data'));
   check('compute works through two switches', s.computeSupply === 4, String(s.computeSupply));
   run(s, 'unnet -t l6');
-  check('cutting the first switch cuts the whole chain', s.computeSupply === 0 && /p6\s+Network Switch\s+\[NO DATA\]/i.test(text(s, 'rooms')) && /p4\s+Server Rack\s+\[NO DATA\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  check('cutting the first switch cuts the whole chain', s.computeSupply === 0 && /p6\s+Network Switch\s+ports \d+\/\d+\s+\[NO DATA\]/i.test(text(s, 'rooms')) && /p4\s+Server Rack\s+\[NO DATA\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
   run(s, 'net -f i6 -t l6');
   check('restoring the first switch restores the chain', s.computeSupply === 4);
   run(s, 'unwire -t p6');
@@ -426,6 +426,50 @@ const base = (): State => {
   check('net -t offers racks and switches', suggest(s, 'net -f i6 -t ').completions.slice().sort().join(' ') === 'l6 o6', suggest(s, 'net -f i6 -t ').completions.join(' '));
   check('net preview from a switch to a rack is valid', linkPreview(s, 'net -f l6 -t o6')?.valid === true);
   check('net preview from a rack is invalid', linkPreview(s, 'net -f o6 -t l6')?.valid === false);
+}
+
+// --- Capacity: how much of a limited resource is used -------------------------------------------------
+{
+  const s = rich();
+  const cap = (cell: string) => capacityOf(s, room(s, cell));
+  check('the hub has no capacity row', cap('i6') === null);
+  check('reactor shows power load against output', JSON.stringify(cap('h6')) === JSON.stringify({ resource: 'power', label: 'load', used: 3, total: 12, broken: 0, offline: false }), JSON.stringify(cap('h6')));
+  check('oxygen plant shows pipes', cap('j6')?.used === 0 && cap('j6')?.total === 4 && cap('j6')?.resource === 'air');
+  check('rooms shows the numbers', text(s, 'rooms').includes('Reactor  load 3/12') && text(s, 'rooms').includes('Oxygen Plant  pipes 0/4'), text(s, 'rooms'));
+  run(s, 'build garden -l g5', 'build lounge -l g4', 'build rack -l g6');
+  check('garden, lounge and rack have no capacity row', cap('g5') === null && cap('g4') === null && cap('g6') === null);
+  check('hasCapacity matches', hasCapacity('switch') && hasCapacity('quarters') && !hasCapacity('hub') && !hasCapacity('garden'));
+
+  // Pipes: used counts recorded pipes; broken counts the ones that are not delivering.
+  run(s, 'build quarters -l j7', 'wire -f h6 -t j7', 'pipe -f j6 -t j7', 'build quarters -l k7', 'wire -f h6 -t k7', 'pipe -f j6 -t k7');
+  check('two pipes in use, none broken', cap('j6')?.used === 2 && cap('j6')?.broken === 0 && capacityText(cap('j6')!) === 'pipes 2/4');
+  run(s, 'unwire -t j6');
+  check('an unpowered plant makes its pipes broken', cap('j6')?.used === 2 && cap('j6')?.broken === 2, JSON.stringify(cap('j6')));
+  run(s, 'wire -f h6 -t j6', 'unpipe -t k7');
+  check('unpipe frees a pipe', cap('j6')?.used === 1 && cap('j6')?.broken === 0);
+
+  // Beds: the hub fills first, then working quarters in order.
+  check('quarters start empty while the hub has room', cap('j7')?.used === 0 && cap('j7')?.total === 2 && cap('j7')?.offline === false, JSON.stringify(cap('j7')));
+  for (let i = 0; i < 3; i++) s.crew.push({ name: `Extra${i}`, role: 'Engineer', housed: true });
+  check('extra crew fill the quarters once the hub is full', cap('j7')?.used === 2, JSON.stringify(cap('j7')));
+  check('rooms shows beds', text(s, 'rooms').includes('Quarters  beds 2/2'), text(s, 'rooms'));
+  run(s, 'upgrade -l j7');
+  check('Mk2 quarters have 3 beds and take the 7th crew member', cap('j7')?.total === 3 && cap('j7')?.used === 3, JSON.stringify(cap('j7')));
+  run(s, 'unwire -t j7');
+  check('quarters without power are offline and empty', cap('j7')?.offline === true && cap('j7')?.used === 0 && capacityText(cap('j7')!).includes('(offline)'), JSON.stringify(cap('j7')));
+  run(s, 'upgrade -l h6');
+  check('reactor Mk2 total is 18', cap('h6')?.total === 18);
+}
+{
+  const s = base();
+  const cap = () => capacityOf(s, room(s, 'l6'))!;
+  check('switch starts with free ports', cap().used === 0 && cap().total === 4 && cap().resource === 'data' && cap().broken === 0, JSON.stringify(cap()));
+  run(s, 'build rack -l o6', 'wire -f m5 -t o6', 'net -f l6 -t o6');
+  check('a linked rack uses a port', cap().used === 1 && capacityText(cap()) === 'ports 1/4');
+  run(s, 'unwire -t l6');
+  check('a cut-off switch shows its links as broken', cap().used === 1 && cap().broken === 1, JSON.stringify(cap()));
+  run(s, 'wire -f m5 -t l6', 'unnet -t o6');
+  check('unnet frees the port', cap().used === 0 && cap().broken === 0);
 }
 
 // --- Repeating a link ---------------------------------------------------------------------------------

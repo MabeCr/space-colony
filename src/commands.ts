@@ -1,7 +1,7 @@
 import {
   BUILDABLE, CATEGORY_LABELS, CATEGORY_ORDER, COLONIST_FOOD, COLONIST_O2, COLS, HISTORY_CAP, HUB_CAPACITY, MATERIAL_PER_COLONIST, MAX_TIER, UPGRADE_COST,
   ROOM_DEFS, ROWS, STOCK_CAP, addRoom, coord, dist, housingSlots, isDataSource, nameOf, needsData, needsPower, parseCoord, plantPipes,
-  reactorLoad, recompute, refundFor, roomAt, roomById, sourcePorts, statsAt, statsOf, typesIn,
+  capacityOf, capacityText, reactorLoad, recompute, refundFor, roomAt, roomById, sourcePorts, statsAt, statsOf, typesIn,
   type Category, type LogLine, type Room, type RoomType, type Sample, type State,
 } from './sim';
 import { asciiChart } from './chart';
@@ -674,7 +674,8 @@ export const COMMANDS: Record<string, Command> = {
     run: (s) => ({
       lines: s.rooms.map((r) => {
         const flags = roomProblems(r);
-        const l = `  ${coord(r.x, r.y).padEnd(4)} ${nameOf(r)}${flags.length ? '  [' + flags.join(', ') + ']' : ''}`;
+        const cap = capacityOf(s, r);
+        const l = `  ${coord(r.x, r.y).padEnd(4)} ${nameOf(r)}${cap ? '  ' + capacityText(cap) : ''}${flags.length ? '  [' + flags.join(', ') + ']' : ''}`;
         return flags.length ? warn(l) : { kind: 'info', text: `${l}  `, tag: { text: '[OPERATIONAL]', kind: 'ok' } };
       }),
     }),

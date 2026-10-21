@@ -1,4 +1,4 @@
-import { COLS, ROOM_DEFS, ROWS, coord, dist, nameOf, needsData, needsPower, roomAt, roomById, statsOf, type RoomType, type State } from './sim';
+import { COLS, ROOM_DEFS, ROWS, capacityOf, capacityText, coord, dist, hasCapacity, nameOf, needsData, needsPower, roomAt, roomById, statsOf, type Capacity, type Room, type RoomType, type State } from './sim';
 
 export interface View {
   selected: { x: number; y: number } | null;
@@ -15,6 +15,16 @@ export interface View {
   /** Wire or pipe being typed with both -from and -to set; `valid` is false if it would be refused. */
   linkGhost: { kind: 'wire' | 'pipe' | 'net'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null;
 }
+
+/**
+ * Capacity dots fade in as the cell size grows from the first value to the second (pixels), so they
+ * appear when you zoom in and fade out when you zoom out. The hovered or selected room always shows them.
+ */
+const DOTS_FADE_FROM = 48;
+const DOTS_FADE_TO = 66;
+
+const RED = '#ff6b6b';
+const CAPACITY_COLORS: Record<Capacity['resource'], string> = { data: '#b18cff', air: '#5ad1e6', beds: '#c19cf5', power: '#f7b955' };
 
 /** Colour of data links (violet). */
 const DATA_COLOR = 'rgba(177, 140, 255, 0.7)';
@@ -217,6 +227,7 @@ export class Renderer {
     ctx.setLineDash([]);
 
     // Rooms.
+    const dotFade = Math.min(1, Math.max(0, (cell - DOTS_FADE_FROM) / (DOTS_FADE_TO - DOTS_FADE_FROM)));
     const pulse = 0.5 + 0.5 * Math.sin(t / 220);
     for (const r of s.rooms) {
       const def = ROOM_DEFS[r.type];
@@ -229,7 +240,10 @@ export class Renderer {
       const y = oy + r.y * cell + 3;
       const sz = cell - 6;
       const base = (fr ? lit.has(r.id) : !v.highlight || v.highlight.includes(r.type)) ? 1 : DIM;
-      this.tile(r.type, r.x, r.y, (dead ? 0.55 : 1) * base, dead ? `rgba(255, 90, 90, ${0.5 + 0.5 * pulse})` : def.color, t, !dead, r.tier);
+      this.tile(r.type, r.x, r.y, (dead ? 0.55 : 1) * base, dead ? `rgba(255, 90, 90, ${0.5 + 0.5 * pulse})` : def.color, t, !dead, r.tier, hasCapacity(r.type));
+      const cap = capacityOf(s, r);
+      const shown = v.hover && v.hover.x === r.x && v.hover.y === r.y || v.selected && v.selected.x === r.x && v.selected.y === r.y;
+      if (cap) this.capacity(r, cap, (shown ? 1 : dotFade) * base * (dead ? 0.55 : 1));
       ctx.globalAlpha = base;
       // Badges for what's missing: a bolt for power, a droplet for air.
       let bx = x + sz - 7;
@@ -240,7 +254,7 @@ export class Renderer {
     }
 
     // Translucent preview of the room about to be built.
-    if (v.ghost && ghostAt && ghostOpen) this.tile(v.ghost.type, ghostAt.x, ghostAt.y, GHOST_ALPHA, ROOM_DEFS[v.ghost.type].color, t, true);
+    if (v.ghost && ghostAt && ghostOpen) this.tile(v.ghost.type, ghostAt.x, ghostAt.y, GHOST_ALPHA, ROOM_DEFS[v.ghost.type].color, t, true, 1, hasCapacity(v.ghost.type));
     ctx.globalAlpha = 1;
 
     if (v.selected) this.box(v.selected.x, v.selected.y, '#ffffff', 0.9);
@@ -248,7 +262,8 @@ export class Renderer {
       this.box(v.hover.x, v.hover.y, '#7aa2f7', 0.7);
       ctx.fillStyle = 'rgba(8, 10, 20, 0.85)';
       const room = roomAt(s, v.hover.x, v.hover.y);
-      const label = `${coord(v.hover.x, v.hover.y)}${room ? ' ' + nameOf(room) : ''}`;
+      const hoverCap = room ? capacityOf(s, room) : null;
+      const label = `${coord(v.hover.x, v.hover.y)}${room ? ' ' + nameOf(room) : ''}${hoverCap ? '  ' + capacityText(hoverCap) : ''}`;
       ctx.font = '12px ui-monospace, Consolas, monospace';
       const tw = ctx.measureText(label).width + 12;
       const [cx, cy] = this.center(v.hover.x, v.hover.y);
@@ -260,7 +275,7 @@ export class Renderer {
   }
 
   /** A room's rounded tile and icon at a cell, drawn at the given opacity. Leaves globalAlpha changed. */
-  private tile(type: RoomType, cx: number, cy: number, alpha: number, stroke: string, t: number, active: boolean, tier = 1): void {
+  private tile(type: RoomType, cx: number, cy: number, alpha: number, stroke: string, t: number, active: boolean, tier = 1, withCapacity = false): void {
     const { ctx } = this;
     const { cell, ox, oy } = this.geo;
     const x = ox + cx * cell + 3;
@@ -281,8 +296,51 @@ export class Renderer {
       ctx.stroke();
     }
     ctx.save();
-    ctx.translate(x + sz / 2, y + sz / 2);
-    drawIcon(ctx, type, sz * 0.36, color, t, active);
+    // Rooms with a capacity row draw a slightly smaller icon, nudged up to leave room for the dots.
+    ctx.translate(x + sz / 2, y + sz / 2 - (withCapacity ? sz * 0.09 : 0));
+    drawIcon(ctx, type, sz * (withCapacity ? 0.3 : 0.36), color, t, active);
+    ctx.restore();
+  }
+
+  /**
+   * A row of dots along the bottom of a room: filled for used, red for used but not delivering, hollow
+   * for free. Reactor power is a continuous amount, so it is a thin bar instead.
+   */
+  private capacity(r: Room, c: Capacity, alpha: number): void {
+    if (alpha < 0.03 || c.total <= 0) return;
+    const { ctx } = this;
+    const { cell, ox, oy } = this.geo;
+    const sz = cell - 6;
+    const x = ox + r.x * cell + 3;
+    const y = oy + r.y * cell + 3;
+    const cy = y + sz * 0.81;
+    const color = CAPACITY_COLORS[c.resource];
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (c.resource === 'power') {
+      const w = sz * 0.7;
+      const h = Math.max(3, sz * 0.08);
+      const bx = x + (sz - w) / 2;
+      ctx.fillStyle = 'rgba(11, 15, 30, 0.9)';
+      ctx.fillRect(bx, cy - h / 2, w, h);
+      ctx.fillStyle = c.used >= c.total ? RED : color;
+      ctx.fillRect(bx, cy - h / 2, w * Math.min(1, c.used / c.total), h);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx - 0.5, cy - h / 2 - 0.5, w + 1, h + 1);
+    } else {
+      const rad = Math.max(1.5, Math.min(3.2, cell * 0.045));
+      const gap = Math.min(rad * 2 + 2.5, (sz * 0.8) / c.total);
+      const x0 = x + sz / 2 - ((c.total - 1) * gap) / 2;
+      for (let i = 0; i < c.total; i++) {
+        const used = i < c.used;
+        const bad = c.offline || (used && i >= c.used - c.broken);
+        ctx.beginPath();
+        ctx.arc(x0 + i * gap, cy, rad, 0, Math.PI * 2);
+        if (used && !c.offline) { ctx.fillStyle = bad ? RED : color; ctx.fill(); }
+        else { ctx.fillStyle = 'rgba(11, 15, 30, 0.8)'; ctx.fill(); ctx.strokeStyle = bad ? RED : color; ctx.lineWidth = 1.2; ctx.stroke(); }
+      }
+    }
     ctx.restore();
   }
 
