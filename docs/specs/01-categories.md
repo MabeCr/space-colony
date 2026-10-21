@@ -2,7 +2,7 @@
 
 **Goal.** Group room types into categories so the player can browse and highlight them. This changes discovery only. `build <type> -location <cell>` must work exactly as it does today.
 
-**Status:** Built (typecheck and command output checked; the in-browser checklist below is still to run). **Depends on:** none.
+**Status:** Done. **Depends on:** none.
 
 ## Scope
 
