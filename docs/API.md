@@ -286,10 +286,11 @@ Errors:
 | Nothing built at a cell | `Nothing is built at <cell>.` |
 | Source is not a reactor | `<room> at <cell> is not a reactor.` |
 | Target uses no power | `<room> at <cell> does not use wired power.` |
+| Already wired to this reactor | `<room> at <cell> is already wired to the reactor at <cell>.` (adds "It is not getting power; see "rooms" for why." if it is not working) |
 | Target out of range | `Out of range: <room> is <d> cells from the reactor, and its radius is 4.` |
 | Reactor lacks capacity | `Reactor at <cell> has <n> spare power, and <room> needs <draw>. Build another reactor.` |
 
-The capacity check ignores the target's own current draw when rewiring a room that is already powered by the same reactor.
+Repeating a link that already exists is refused (and changes nothing), the same for `pipe` and `net`. Linking to a **different** source still reroutes.
 
 ```
 wire -from h6 -to e6
@@ -347,6 +348,7 @@ Errors:
 | Nothing built at a cell | `Nothing is built at <cell>.` |
 | Source is not an oxygen plant | `<room> at <cell> is not an oxygen plant.` |
 | Target is not quarters | `<room> at <cell> does not need piped air.` |
+| Already piped to this plant | `<room> at <cell> is already piped to the plant at <cell>.` (adds a note if it is not getting air) |
 | Target out of range | `Out of range: <room> is <d> cells away, and the plant's radius is 4.` |
 | Plant full | `The plant at <cell> already feeds 4 rooms. Build another oxygen plant.` |
 
@@ -405,6 +407,7 @@ Errors:
 | Source is not the hub or a switch | `<room> at <cell> is not a data source.` |
 | Source and target are the same room | `<room> at <cell> cannot be linked to itself.` |
 | Target does not use data | `<room> at <cell> does not use a data link.` |
+| Already linked to this source | `<room> at <cell> is already linked to the <source> at <cell>.` (adds a note if it is not getting data) |
 | Out of range | `Out of range: <room> is <d> cells away, and the data radius of the <source> is <r>.` |
 | Source has no free port | `The <source> at <cell> has no free ports (<n> of <n> in use). Unlink one with "unnet".` |
 

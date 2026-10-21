@@ -287,7 +287,8 @@ const run = (s: State, ...lines: string[]): void => { for (const l of lines) exe
   run(s, 'build rack -l k7');
   const full = text(s, 'net -f i6 -t k7');
   check('seventh link is refused for ports', full.includes('no free ports') && full.includes('6 of 6'), full);
-  check('a rack already linked can be re-linked with full ports', text(s, 'net -f i6 -t g5').startsWith('Linked data'));
+  const dup = text(s, 'net -f i6 -t g5');
+  check('repeating a net link says it already exists, even with full ports', dup === 'Server Rack at G5 is already linked to the Command Hub at I6.', dup);
 
   // Upgrade and refund.
   run(s, 'wire -f h6 -t g7');
@@ -371,7 +372,7 @@ const base = (): State => {
   check('inspect shows 4 / 4', text(s, 'inspect l6').includes('Data ports: 4 / 4'));
   const full = text(s, 'net -f l6 -t n7');
   check('fifth link is refused for ports', full.includes('Network Switch') && full.includes('no free ports') && full.includes('4 of 4'), full);
-  check('a linked rack can be re-linked when full', text(s, 'net -f l6 -t o6').startsWith('Linked data'));
+  check('repeating a net link says it already exists, even when full', text(s, 'net -f l6 -t o6') === 'Server Rack at O6 is already linked to the Network Switch at L6.', text(s, 'net -f l6 -t o6'));
 }
 {
   // Reroute from the hub to a switch.
@@ -425,6 +426,23 @@ const base = (): State => {
   check('net -t offers racks and switches', suggest(s, 'net -f i6 -t ').completions.slice().sort().join(' ') === 'l6 o6', suggest(s, 'net -f i6 -t ').completions.join(' '));
   check('net preview from a switch to a rack is valid', linkPreview(s, 'net -f l6 -t o6')?.valid === true);
   check('net preview from a rack is invalid', linkPreview(s, 'net -f o6 -t l6')?.valid === false);
+}
+
+// --- Repeating a link ---------------------------------------------------------------------------------
+{
+  const s = rich();
+  run(s, 'build garden -l g5', 'wire -f h6 -t g5', 'build quarters -l j7', 'wire -f h6 -t j7', 'pipe -f j6 -t j7', 'build rack -l g6', 'wire -f h6 -t g6', 'net -f i6 -t g6');
+  const m = s.materials;
+  check('repeating wire says it already exists', text(s, 'wire -f h6 -t g5') === 'Hydroponics at G5 is already wired to the reactor at H6.', text(s, 'wire -f h6 -t g5'));
+  check('repeating pipe says it already exists', text(s, 'pipe -f j6 -t j7') === 'Quarters at J7 is already piped to the plant at J6.', text(s, 'pipe -f j6 -t j7'));
+  check('repeating net says it already exists', text(s, 'net -f i6 -t g6') === 'Server Rack at G6 is already linked to the Command Hub at I6.', text(s, 'net -f i6 -t g6'));
+  check('a repeated link is an error and changes nothing', kinds(s, 'net -f i6 -t g6')[0] === 'err' && s.materials === m && s.computeSupply === 4);
+  check('a different source still reroutes', (() => { const t = rich(); run(t, 'build reactor -l f6', 'build garden -l g5', 'wire -f h6 -t g5'); return text(t, 'wire -f f6 -t g5').startsWith('Rewired'); })());
+  // A link that exists but is not delivering says so.
+  const cut = base();
+  run(cut, 'build rack -l o6', 'wire -f m5 -t o6', 'net -f l6 -t o6', 'unwire -t l6');
+  const note = text(cut, 'net -f l6 -t o6');
+  check('a repeated link that is not delivering points at rooms', note === 'Server Rack at O6 is already linked to the Network Switch at L6. It is not getting data; see "rooms" for why.', note);
 }
 
 // --- Autofill / completion -------------------------------------------------------------------

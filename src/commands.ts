@@ -450,6 +450,7 @@ export const COMMANDS: Record<string, Command> = {
       if (isResult(to)) return to;
       if (from.type !== 'reactor') return err(`${at(from)} is not a reactor.`);
       if (!needsPower(to.type)) return err(`${at(to)} does not use wired power.`);
+      if (to.powerFrom === from.id) return err(`${at(to)} is already wired to the reactor at ${coord(from.x, from.y)}.${to.powered ? '' : ' It is not getting power; see "rooms" for why.'}`);
       const d = dist(from, to);
       const { radius, output } = statsOf(from);
       if (d > radius) return err(`Out of range: ${at(to)} is ${d.toFixed(1)} cells from the reactor, and its radius is ${radius}.`);
@@ -488,6 +489,7 @@ export const COMMANDS: Record<string, Command> = {
       if (isResult(to)) return to;
       if (from.type !== 'oxygen') return err(`${at(from)} is not an oxygen plant.`);
       if (to.type !== 'quarters') return err(`${at(to)} does not need piped air.`);
+      if (to.airFrom === from.id) return err(`${at(to)} is already piped to the plant at ${coord(from.x, from.y)}.${to.breathable ? '' : ' It is not getting air; see "rooms" for why.'}`);
       const d = dist(from, to);
       const { radius, pipes } = statsOf(from);
       if (d > radius) return err(`Out of range: ${at(to)} is ${d.toFixed(1)} cells away, and the plant's radius is ${radius}.`);
@@ -526,6 +528,7 @@ export const COMMANDS: Record<string, Command> = {
       if (!isDataSource(from.type)) return err(`${at(from)} is not a data source.`);
       if (from === to) return err(`${at(to)} cannot be linked to itself.`);
       if (!needsData(to.type)) return err(`${at(to)} does not use a data link.`);
+      if (to.dataFrom === from.id) return err(`${at(to)} is already linked to the ${ROOM_DEFS[from.type].label} at ${coord(from.x, from.y)}.${to.data ? '' : ' It is not getting data; see "rooms" for why.'}`);
       const d = dist(from, to);
       const { radius, ports } = statsOf(from);
       if (d > radius) return err(`Out of range: ${at(to)} is ${d.toFixed(1)} cells away, and the data radius of the ${ROOM_DEFS[from.type].label} is ${radius}.`);
