@@ -2,7 +2,7 @@
 
 **Goal.** Add compute as a capacity resource, like power, produced by a new room that needs both power and a data link. Nothing consumes compute yet; this slice builds the supply side, the data link from the hub, and the reporting, so that research (Slice 5) and scripts have something to draw on.
 
-**Status:** Built. Automated checks: `npm run smoke`. The browser checklist below is still to run. **Depends on:** Slice 1.
+**Status:** Done. Automated checks: `npm run smoke`; the browser checklist was run by hand. **Depends on:** Slice 1.
 
 **Scope change (2026-10-20).** The data link (`net` and `unnet`, with the Command Hub as the data source) moved into this slice from Slice 4, because a rack that needs only power would be redesigned straight away. Slice 4 is now only the network switch and chaining.
 
