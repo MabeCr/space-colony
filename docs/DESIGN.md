@@ -142,7 +142,7 @@ Decision: clicking a cell only targets it, exactly as if the cursor had been mov
   - `view <room type>` (also the plural, e.g. `view gardens`) lights up every room of that type and dims the other rooms and links, then lists the cells. Types: hub, reactor, oxygen, garden, quarters, lounge. Nothing built of that type clears it with a warning. The highlight stays until `view reset`, another `view`, or an `inspect` on a room (the newest command wins; each clears the other). `view reset` also clears an `inspect` focus.
   - Commands report camera and highlight changes through a `view` field on `CommandResult` (`ViewAction` in `commands.ts`); `main.ts` applies it to the renderer.
 - Wires are amber, pipes are cyan. Working links animate as moving dashes; broken ones are dotted red.
-- Rooms with missing power or air pulse red and show a bolt or droplet badge.
+- Rooms with missing power, air or data pulse red and show a bolt, droplet or network-node badge.
 - Hovered or selected rooms with a radius show a range ring and light up the in-range cells.
 
 ## Planned game design (not built yet)

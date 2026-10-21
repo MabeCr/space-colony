@@ -1,4 +1,4 @@
-import { COLS, ROOM_DEFS, ROWS, coord, dist, nameOf, needsPower, roomAt, roomById, statsOf, type RoomType, type State } from './sim';
+import { COLS, ROOM_DEFS, ROWS, coord, dist, nameOf, needsData, needsPower, roomAt, roomById, statsOf, type RoomType, type State } from './sim';
 
 export interface View {
   selected: { x: number; y: number } | null;
@@ -223,7 +223,8 @@ export class Renderer {
       const needPower = needsPower(r.type);
       const noPower = needPower && !r.powered;
       const noAir = r.type === 'quarters' && !r.breathable;
-      const dead = noPower || noAir;
+      const noData = needsData(r.type) && !r.data;
+      const dead = noPower || noAir || noData;
       const x = ox + r.x * cell + 3;
       const y = oy + r.y * cell + 3;
       const sz = cell - 6;
@@ -233,7 +234,8 @@ export class Renderer {
       // Badges for what's missing: a bolt for power, a droplet for air.
       let bx = x + sz - 7;
       if (noPower) { badge(ctx, bx, y + 7, 'bolt', '#f7b955'); bx -= 14; }
-      if (noAir) badge(ctx, bx, y + 7, 'drop', '#5ad1e6');
+      if (noAir) { badge(ctx, bx, y + 7, 'drop', '#5ad1e6'); bx -= 14; }
+      if (noData) badge(ctx, bx, y + 7, 'data', '#b18cff');
       ctx.globalAlpha = 1;
     }
 
@@ -423,7 +425,7 @@ function drawIcon(ctx: CanvasRenderingContext2D, type: RoomType, r: number, colo
   }
 }
 
-function badge(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'bolt' | 'drop', color: string): void {
+function badge(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'bolt' | 'drop' | 'data', color: string): void {
   ctx.save();
   ctx.translate(x, y);
   ctx.fillStyle = '#0b0f1e';
@@ -432,6 +434,14 @@ function badge(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'bolt'
   ctx.lineWidth = 1.2;
   ctx.stroke();
   ctx.fillStyle = color;
+  if (kind === 'data') { // three linked nodes
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath(); ctx.moveTo(0, -2.6); ctx.lineTo(-2.8, 2.4); ctx.moveTo(0, -2.6); ctx.lineTo(2.8, 2.4); ctx.stroke();
+    for (const [nx, ny] of [[0, -2.6], [-2.8, 2.4], [2.8, 2.4]]) { ctx.beginPath(); ctx.arc(nx, ny, 1.5, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+    return;
+  }
   ctx.beginPath();
   if (kind === 'bolt') { ctx.moveTo(1.5, -4); ctx.lineTo(-2.5, 0.5); ctx.lineTo(0, 0.5); ctx.lineTo(-1.5, 4); ctx.lineTo(2.5, -0.5); ctx.lineTo(0, -0.5); }
   else { ctx.moveTo(0, -4); ctx.quadraticCurveTo(3.5, 0.5, 0, 3.5); ctx.quadraticCurveTo(-3.5, 0.5, 0, -4); }
