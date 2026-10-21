@@ -2,7 +2,7 @@
 
 **Goal.** Extend the data network with a network switch that relays data to rooms within its own radius, so the player can build the network in sections without running data across the whole map.
 
-**Status:** Built. Automated checks: `npm run smoke`. The browser checklist below is still to run. **Depends on:** Slice 3.
+**Status:** Done. Automated checks: `npm run smoke`; the browser checklist was run by hand. **Depends on:** Slice 3.
 
 **Scope change (2026-10-20).** The data link itself (`net`, `unnet`, the hub as the data source, the violet map links, the `NOT NETWORKED` and `NO DATA` flags, the preview and autofill) was built in [Slice 3](03-compute-capacity.md). This slice adds only the switch and chaining. Read Slice 3 first.
 
