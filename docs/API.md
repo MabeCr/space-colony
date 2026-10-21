@@ -73,10 +73,11 @@ Valid values for `build <type>`. The Command Hub (`hub`) exists from the start a
 | `quarters` | Quarters | 20 | 1 | — | Needs a power wire **and** an air pipe. Houses 2 colonists and attracts new arrivals. |
 | `lounge` | Lounge | 30 | 2 | 3 | Needs power. Quarters within its radius get a happiness boost. |
 | `rack` | Server Rack | 35 | 2 | — | Needs power **and** a data link. Produces 4 compute capacity while both work. |
+| `switch` | Network Switch | 20 | 1 | 4 (data) | Needs power **and** a data link. Relays data to up to 4 racks or switches within its data radius. Cannot be upgraded. |
 
 Other limits used by the commands:
 
-- The Command Hub is the root of the data network: it has a **data radius of 5** and **6 ports**, so it can link up to 6 racks within 5 cells (see [`net`](#net)).
+- The Command Hub is the root of the data network: it has a **data radius of 5** and **6 ports**, so it can link up to 6 racks or switches within 5 cells. A network switch has a data radius of **4** and **4** ports. See [`net`](#net).
 - A Mk1 reactor supplies **12** power total (Mk2: 18). A Mk1 oxygen plant feeds at most **4** quarters (Mk2: 6). See [Tiers](#tiers).
 - Distances are straight-line (Euclidean) between cell centres, e.g. `h6` to `j7` is about 2.2.
 - `demolish` refunds half of everything spent on the room (build plus upgrade), rounded down.
@@ -111,8 +112,8 @@ The hub cannot be upgraded. Mk3 is a separate building, not an upgrade (not buil
 | [`unwire`](#unwire) | `unwire -to <room>` | Cut the power line to a room. |
 | [`pipe`](#pipe) | `pipe -from <oxygen plant> -to <quarters>` | Pipe air from an oxygen plant to quarters. |
 | [`unpipe`](#unpipe) | `unpipe -to <quarters>` | Cut the air pipe to quarters. |
-| [`net`](#net) | `net -from <hub> -to <rack>` | Link a rack to the data network. |
-| [`unnet`](#unnet) | `unnet -to <rack>` | Cut the data link to a rack. |
+| [`net`](#net) | `net -from <hub or switch> -to <rack or switch>` | Link a rack or switch to the data network. |
+| [`unnet`](#unnet) | `unnet -to <room>` | Cut the data link to a rack or switch. |
 | [`upgrade`](#upgrade) | `upgrade`, `upgrade -location <cell>` | List upgradable rooms, or upgrade one from Mk1 to Mk2. |
 | [`demolish`](#demolish) | `demolish -location <cell>` | Tear down a room for a 50% refund of everything spent on it. |
 | [`inspect`](#inspect) | `inspect -location <cell>` / `inspect reset` | Room details and map highlight. |
@@ -183,7 +184,7 @@ Each line ends with a trend arrow comparing now to 10 ticks ago: `▲` rising, `
 | `materials` | Income per tick (1 + 0.5 per colonist), and for each buildable room type its cost and whether it is affordable now or in how many ticks. |
 | `colonists` | Total beds (hub 4 + working quarters x 2) and how many are free, housed versus no bunk, quarters that are not counted because they lack power or air, and the state of the next arrival: blocked (no free beds), paused (happiness below 50), or due in N ticks. |
 | `power` | Graphs power wanted (scaled up to the highest wanted or produced in the window). Then: wanted versus produced and the spare or shortfall, each reactor's load, spare capacity and number of rooms wired to it, and each power-using room that is not wired, out of range of its reactor, or on an overloaded reactor. Suggests another reactor when short. |
-| `compute` | Graphs compute capacity over time, then capacity, used and free (used is 0 until something reserves compute), each rack online or with its problem flags and the fix for each (`wire`, `net`), and a warning to build another rack if compute is in use and none is free. With no rack it says to build one. |
+| `compute` | Graphs compute capacity over time, then capacity, used and free (used is 0 until something reserves compute), each network switch (relaying, with ports in use, or its flags) and each rack online or with its problem flags and the fix for each (`wire`, `net`), and a warning to build another rack if compute is in use and none is free. With no rack it says to build one. |
 | `happiness` | Where it is heading (the target the score moves 10% toward each tick), a bar for each of air, food, housing and fun, the weakest component with a suggestion, and a warning if it is below 50 (no arrivals). |
 
 Errors: `Unknown status option "<text>". Options: ...`, `-time must be a whole number of ticks from 2 to 300.`, or `Not enough history yet. Try again in a moment.` (before the first tick).
@@ -222,7 +223,7 @@ Categories group room types for browsing only; they never change how a room is b
 | `life` | oxygen |
 | `food` | garden |
 | `habitat` | quarters, lounge |
-| `compute` | rack |
+| `compute` | rack, switch |
 | `industry`, `defense`, `maint` | nothing yet (hidden from the list) |
 
 Behaviour:
@@ -234,7 +235,7 @@ Behaviour:
 - Prints a warning if the new room still needs setup:
   - Any room that draws power (everything except a reactor): `Not wired yet: wire -from <reactor> -to <cell>`
   - Quarters: `No air yet: pipe -from <oxygen plant> -to <cell>`
-  - Server rack: `No data yet: net -from <hub> -to <cell>`
+  - Server rack or network switch: `No data yet: net -from <hub or switch> -to <cell>`
 
 Errors:
 
@@ -285,10 +286,11 @@ Errors:
 | Nothing built at a cell | `Nothing is built at <cell>.` |
 | Source is not a reactor | `<room> at <cell> is not a reactor.` |
 | Target uses no power | `<room> at <cell> does not use wired power.` |
+| Already wired to this reactor | `<room> at <cell> is already wired to the reactor at <cell>.` (adds "It is not getting power; see "rooms" for why." if it is not working) |
 | Target out of range | `Out of range: <room> is <d> cells from the reactor, and its radius is 4.` |
 | Reactor lacks capacity | `Reactor at <cell> has <n> spare power, and <room> needs <draw>. Build another reactor.` |
 
-The capacity check ignores the target's own current draw when rewiring a room that is already powered by the same reactor.
+Repeating a link that already exists is refused (and changes nothing), the same for `pipe` and `net`. Linking to a **different** source still reroutes.
 
 ```
 wire -from h6 -to e6
@@ -346,6 +348,7 @@ Errors:
 | Nothing built at a cell | `Nothing is built at <cell>.` |
 | Source is not an oxygen plant | `<room> at <cell> is not an oxygen plant.` |
 | Target is not quarters | `<room> at <cell> does not need piped air.` |
+| Already piped to this plant | `<room> at <cell> is already piped to the plant at <cell>.` (adds a note if it is not getting air) |
 | Target out of range | `Out of range: <room> is <d> cells away, and the plant's radius is 4.` |
 | Plant full | `The plant at <cell> already feeds 4 rooms. Build another oxygen plant.` |
 
@@ -379,18 +382,19 @@ unpipe -to k7
 ### net
 
 ```
-net -from <hub> -to <rack>
+net -from <hub or switch> -to <rack or switch>
 ```
 
 | Parameter | Form | Aliases | Required | Description |
 |---|---|---|---|---|
-| `-from <cell>` | flag | `-f`, `-src` | yes | Cell of the data source. Only the Command Hub for now. |
-| `-to <cell>` | flag | `-t`, `-dest`, `-destination` | yes | Cell of the room that needs data (a server rack). |
+| `-from <cell>` | flag | `-f`, `-src` | yes | Cell of the data source: the Command Hub or a network switch. |
+| `-to <cell>` | flag | `-t`, `-dest`, `-destination` | yes | Cell of the room that needs data: a server rack or a network switch. |
 
 Behaviour:
 
-- Records a data link from the hub to the rack. The link delivers only while the rack is within the hub's data radius (**5**) and the hub has a free port (**6** ports). A rack produces compute only when it has **both** power and a working data link.
-- If the rack was linked to a different source, the link is **rerouted** (there is only the hub for now).
+- Records a data link from the source to the room. The link delivers only while **all three** hold: the source is online, the room is within the source's data radius (hub **5**, switch **4**), and the source has a free port (hub **6**, switch **4**). A rack produces compute only when it has **both** power and a working data link.
+- The Command Hub is always online. A switch is online only when it is **powered and has its own working link back to the hub**. A switch that is cut off (unwired, unlinked, out of range, or its source is full or cut off) stops relaying, and everything behind it reports `NO DATA`. The links stay recorded. Two switches linked to each other never work, and chains of any length are allowed.
+- If the room was linked to a different source, the link is **rerouted**. A room cannot be linked to itself.
 - The map cursor moves to the rack. Data links draw in violet, animated when working and dotted red when broken, like wires and pipes.
 - Links persist when broken, as wires and pipes do.
 
@@ -400,14 +404,17 @@ Errors:
 |---|---|
 | `-from` / `-to` missing | `Missing -from <cell>.` / `Missing -to <cell>.` |
 | Invalid cell, nothing built | The usual messages |
-| Source is not the hub | `<room> at <cell> is not a data source.` |
+| Source is not the hub or a switch | `<room> at <cell> is not a data source.` |
+| Source and target are the same room | `<room> at <cell> cannot be linked to itself.` |
 | Target does not use data | `<room> at <cell> does not use a data link.` |
-| Out of range | `Out of range: <room> is <d> cells away, and the data radius of the Command Hub is 5.` |
-| Source has no free port | `The Command Hub at <cell> has no free ports (6 of 6 in use). Unlink one with "unnet".` |
+| Already linked to this source | `<room> at <cell> is already linked to the <source> at <cell>.` (adds a note if it is not getting data) |
+| Out of range | `Out of range: <room> is <d> cells away, and the data radius of the <source> is <r>.` |
+| Source has no free port | `The <source> at <cell> has no free ports (<n> of <n> in use). Unlink one with "unnet".` |
 
 ```
 net -from i6 -to g5
 net -f i6 -t g5
+net -f l6 -t o6
 ```
 
 ---
@@ -415,16 +422,16 @@ net -f i6 -t g5
 ### unnet
 
 ```
-unnet -to <rack>
+unnet -to <room>
 ```
 
 | Parameter | Form | Aliases | Required | Description |
 |---|---|---|---|---|
-| `-to <cell>` | flag | `-t`, `-dest`, `-destination` | yes | Room whose data link should be cut. |
+| `-to <cell>` | flag | `-t`, `-dest`, `-destination` | yes | Rack or switch whose data link should be cut. |
 
 Errors: `Missing -to <cell>.`, invalid cell, `Nothing is built at <cell>.`, or `<room> at <cell> has no data link.`
 
-On success: `Disconnected data to <room> at <cell>.` The rack stops counting toward compute immediately.
+On success: `Disconnected data to <room> at <cell>.` The rack stops counting toward compute immediately, and if it was a switch, so does everything behind it.
 
 ```
 unnet -to g5
@@ -479,7 +486,7 @@ Behaviour:
 
 Errors: `Missing -location <cell>.`, invalid cell, `Nothing is built at <cell>.`, or `You cannot demolish the Command Hub.`
 
-Refunds at Mk1: reactor 20, oxygen plant 15, hydroponics 12, quarters 10, lounge 15, server rack 17. At Mk2 they are half of build plus upgrade: reactor 32, oxygen plant 25, hydroponics 20, quarters 16, lounge 24, server rack 27.
+Refunds at Mk1: reactor 20, oxygen plant 15, hydroponics 12, quarters 10, lounge 15, server rack 17, network switch 10. At Mk2 they are half of build plus upgrade: reactor 32, oxygen plant 25, hydroponics 20, quarters 16, lounge 24, server rack 27.
 
 ```
 demolish -location e6
@@ -510,7 +517,7 @@ Behaviour:
   - Reactor: output, load (`used / output`) and number of rooms wired to it
   - Oxygen plant: output and pipes in use (`n / limit`); hydroponics: food output; quarters: beds
   - Power draw, for rooms that use power
-  - Hub: data radius and data ports in use (`n / 6`). Server rack: compute produced, and its data state (not networked, linked, or linked but not delivering)
+  - Hub: data radius and data ports in use (`n / 6`). Network switch: data radius, ports in use (`n / 4`), and whether it is connected to the hub. Server rack: compute produced, and its data state (not networked, linked, or linked but not delivering)
   - Power-using rooms: `NOT WIRED`, online (and from which reactor), or wired but unsupplied (out of range or reactor overloaded)
   - Quarters: air status (`NOT PIPED`, flowing, or piped but unsupplied) and number of lounges in range
 - **On an empty cell**, prints `<cell>: empty space.` and clears the highlight.
@@ -535,7 +542,7 @@ inspect reset
 rooms
 ```
 
-No parameters. Lists every room as `<cell>  <label>`, with a bracketed problem list on rooms that are not working (shown as warnings):
+No parameters. Lists every room as `<cell>  <label>`, then (for rooms with a limit) how much of it is used (`ports 1/4`, `pipes 3/4`, `beds 2/3`, `load 9/12`; quarters without power or air add `(offline)`), then a bracketed problem list on rooms that are not working (shown as warnings):
 
 | Flag shown | Meaning |
 |---|---|
@@ -543,8 +550,8 @@ No parameters. Lists every room as `<cell>  <label>`, with a bracketed problem l
 | `NO POWER` | Has a power line, but it is out of range or the reactor is overloaded. |
 | `NOT PIPED` | Quarters with no air pipe. |
 | `NO AIR` | Quarters with an air pipe that is not delivering (plant unpowered, out of range, or full). |
-| `NOT NETWORKED` | A room that needs data (server rack) with no data link. |
-| `NO DATA` | Has a data link that is not delivering (out of the source's data radius, or the source's ports are full). |
+| `NOT NETWORKED` | A room that needs data (server rack, network switch) with no data link. |
+| `NO DATA` | Has a data link that is not delivering: out of the source's data radius, the source's ports are full, or the source is a switch that is cut off from the hub. |
 
 A room with no problems ends with a green `[OPERATIONAL]` tag. This includes the Command Hub and reactors, which have nothing to connect.
 
@@ -674,6 +681,17 @@ Add compute (a rack needs power and data):
 build rack -l g5
 wire -f h6 -t g5
 net -f i6 -t g5
+```
+
+Reach a rack beyond the hub's data radius with a switch (the switch needs power and its own link back to the hub):
+
+```
+build switch -l l6
+wire -f m5 -t l6
+net -f i6 -t l6
+build rack -l o6
+wire -f m5 -t o6
+net -f l6 -t o6
 ```
 
 Add a lounge near quarters:

@@ -63,6 +63,7 @@ A real-time colony survival sim played mostly through a **command line**. The pl
 | Quarters | 20 | 1 | — | Needs a power wire and an air pipe. Houses 2. Draws new arrivals. |
 | Lounge | 30 | 2 | 3 | Needs power. Quarters within its radius get a happiness boost. |
 | Server Rack | 35 | 2 | — | Needs power and a data link. Produces 4 compute capacity. Mk2: 6 capacity, draw 3, upgrade 20. **Implemented (Slice 3).** |
+| Network Switch | 20 | 1 | data 4 | Needs power and a data link. Relays data to up to 4 racks or switches in its data radius. Works only while it is powered and has a working link back to the hub; chains are allowed. No Mk2. **Implemented (Slice 4).** |
 
 Distance is straight-line (Euclidean) between cell centres. A wire is "working" only if the room is in the reactor's radius and the reactor has spare capacity; a pipe is working only if the plant is powered, the quarters are in radius, and the plant has fewer than 4 pipes in use.
 
@@ -87,7 +88,7 @@ Flags can be abbreviated: `-loc`/`-l` for `-location`, `-f`/`-src` for `-from`, 
 - `build <type> -location <cell>` — spend materials to build. Warns if the new room still needs wiring or piping.
 - `wire -from <reactor> -to <room>` / `unwire -to <room>` — power lines.
 - `pipe -from <oxygen plant> -to <quarters>` / `unpipe -to <quarters>` — air pipes.
-- `net -from <hub> -to <rack>` / `unnet -to <rack>` — data links (violet on the map). The hub is the only data source until the network switch (Slice 4). A rack produces compute only with power **and** data. **Implemented (Slice 3).**
+- `net -from <hub> -to <rack>` / `unnet -to <rack>` — data links (violet on the map). Sources are the hub and network switches; a link works only while its source is online (the hub, or a powered switch with its own working link back to the hub), the room is in range and the source has a free port. A rack produces compute only with power **and** data. **Implemented (Slices 3 and 4).**
 - `status compute` — graph of compute capacity, used and free, and each rack's state with the fix. The plain `status` and the HUD show a Compute line once a rack exists. History samples include `computeSupply` and `computeUsed`.
 - `upgrade` / `upgrade -location <cell>` — list upgradable rooms, or upgrade one from Mk1 to Mk2 in place (cost and Mk2 stats in API.md, Tiers). A broken room can be upgraded but stays broken; an upgrade that raises power draw is refused if the reactor lacks spare power. **Implemented (Slice 2).**
 - `demolish -location <cell>` — refunds 50% of everything spent on the room (build plus upgrade). The hub cannot be demolished.
@@ -142,6 +143,7 @@ Decision: clicking a cell only targets it, exactly as if the cursor had been mov
   - `view <room type>` (also the plural, e.g. `view gardens`) lights up every room of that type and dims the other rooms and links, then lists the cells. Types: hub, reactor, oxygen, garden, quarters, lounge. Nothing built of that type clears it with a warning. The highlight stays until `view reset`, another `view`, or an `inspect` on a room (the newest command wins; each clears the other). `view reset` also clears an `inspect` focus.
   - Commands report camera and highlight changes through a `view` field on `CommandResult` (`ViewAction` in `commands.ts`); `main.ts` applies it to the renderer.
 - Wires are amber, pipes are cyan. Working links animate as moving dashes; broken ones are dotted red.
+- **Capacity dots (implemented).** A room with a limited resource shows how much is used: a row of dots along the bottom of its tile, **filled** for used, **hollow** for free, and **red** for a recorded link that is not delivering (for example the ports of a switch that is cut off from the hub). The dots take the colour of the resource: violet for data ports (network switch), cyan for pipes (oxygen plant), lavender for beds (quarters: how many are occupied; all hollow red when the quarters have no power or air). A reactor's power is continuous, so it is a thin amber bar for load against output (red when full). The hub is left out. The dots **fade in as you zoom in and fade out as you zoom out** (cell size `DOTS_FADE_FROM` to `DOTS_FADE_TO` in `render.ts`); the icon on those rooms lifts and shrinks to make room for them as they appear and returns to the centre at full size as they fade, so zoomed out there is no empty strip. The numbers are in `rooms` and the hover label at any zoom. The shared function is `capacityOf` in `sim.ts`: a new room type with a limit declares it there. Decided 2026-10-20; tier stays the inner border, and staff slots (Slice 10) get their own marker in the top corner.
 - Rooms with missing power, air or data pulse red and show a bolt, droplet or network-node badge.
 - Hovered or selected rooms with a radius show a range ring and light up the in-range cells.
 
@@ -199,7 +201,7 @@ Early tiers should need at most one new link type each, so typing load stays low
 **Data network (Decided: hub as root; switch Proposed).**
 
 - The Command Hub is the root of the data network. Anything that needs a data link must reach the hub, directly or through relays.
-- **Network switch (Proposed):** a compute-category room that needs power, relays data to rooms within its own radius, and has a port limit (like the oxygen plant's 4 pipes). It lets the player plan the colony in sections without running data across the whole map. It is also a wave target: losing a switch cuts a whole section off.
+- **Network switch (Implemented 2026-10-20, Slice 4):** a compute-category room that needs power, relays data to rooms within its own radius, and has a port limit (like the oxygen plant's 4 pipes). It lets the player plan the colony in sections without running data across the whole map. It is also a wave target: losing a switch cuts a whole section off.
 
 **Proposed category contents (baseline).** Mk1 and Mk2 are in place; Mk3 is a new building. Names are placeholders. This is the minimum set; the variety principle below adds more Mk1 rooms to the categories that need them.
 

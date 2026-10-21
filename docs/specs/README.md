@@ -16,7 +16,7 @@ These specs turn the decisions in [DESIGN.md](../DESIGN.md) (structures, tiers a
 | 1 | [Categories](01-categories.md) | none | Done |
 | 2 | [Tiers and `upgrade`](02-tiers-and-upgrade.md) | 1 | Done |
 | 3 | [Compute capacity and the data link](03-compute-capacity.md) | 1 | Done |
-| 4 | [Network switch](04-data-link-and-switch.md) | 3 | Not started (the data link itself moved into Slice 3) |
+| 4 | [Network switch](04-data-link-and-switch.md) | 3 | Done |
 | 5 | [`research`](05-research.md) | 2, 3 | Not started |
 | 6 | [Multi-cell footprints](06-multi-cell-footprints.md) | none | **Parked** (Mk3 is 1x1 for now) |
 | 7 | [Mk3 buildings and the coolant link](07-mk3-and-coolant.md) | 2, 5 | Not started |

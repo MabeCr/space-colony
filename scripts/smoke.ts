@@ -1,6 +1,6 @@
 // Headless checks of game behaviour: runs real commands against the sim, no browser needed.
 // Run with: npm run smoke   (exits with an error if any check fails)
-import { housingSlots, newState, roomAt, parseCoord, statsAt, statsOf, step, type Room, type State } from '../src/sim';
+import { capacityOf, capacityText, hasCapacity, housingSlots, newState, roomAt, parseCoord, statsAt, statsOf, step, type Room, type State } from '../src/sim';
 import { COMMANDS, execute, linkPreview, suggest } from '../src/commands';
 
 let failed = 0;
@@ -233,14 +233,14 @@ const run = (s: State, ...lines: string[]): void => { for (const l of lines) exe
 
   const built = execute(s, 'build rack -l g5');
   const warns = built.lines.filter((l) => l.kind === 'warn').map((l) => l.text).join(' | ');
-  check('build rack warns about wire and data', warns.includes('Not wired yet') && warns.includes('No data yet: net -from <hub> -to G5'), warns);
+  check('build rack warns about wire and data', warns.includes('Not wired yet') && warns.includes('No data yet: net -from <hub or switch> -to G5'), warns);
   check('rack flags: not wired and not networked', /g5\s+Server Rack\s+\[NOT WIRED, NOT NETWORKED\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
   check('status shows a compute line once a rack exists', text(s, 'status').includes('Compute     0 used / 0 capacity'), text(s, 'status'));
   check('alerts report the rack', text(s, 'status alerts').includes('NOT WIRED, NOT NETWORKED'), text(s, 'status alerts'));
 
   run(s, 'wire -f h6 -t g5');
   check('wired but not networked gives no compute', s.computeSupply === 0 && text(s, 'rooms').includes('NOT NETWORKED'));
-  check('status compute tells you how to link it', text(s, 'status compute').includes('net -from <hub> -to g5'), text(s, 'status compute'));
+  check('status compute tells you how to link it', text(s, 'status compute').includes('net -from <hub or switch> -to g5'), text(s, 'status compute'));
 
   const linked = execute(s, 'net -f i6 -t g5');
   check('net links the rack', linked.lines[0].kind === 'ok' && linked.lines[0].text.startsWith('Linked data'), linked.lines[0].text);
@@ -287,7 +287,8 @@ const run = (s: State, ...lines: string[]): void => { for (const l of lines) exe
   run(s, 'build rack -l k7');
   const full = text(s, 'net -f i6 -t k7');
   check('seventh link is refused for ports', full.includes('no free ports') && full.includes('6 of 6'), full);
-  check('a rack already linked can be re-linked with full ports', text(s, 'net -f i6 -t g5').startsWith('Linked data'));
+  const dup = text(s, 'net -f i6 -t g5');
+  check('repeating a net link says it already exists, even with full ports', dup === 'Server Rack at G5 is already linked to the Command Hub at I6.', dup);
 
   // Upgrade and refund.
   run(s, 'wire -f h6 -t g7');
@@ -312,6 +313,180 @@ const run = (s: State, ...lines: string[]): void => { for (const l of lines) exe
   check('unnet -t completes to linked racks only', suggest(s, 'unnet -t ').completions.every((c) => room(s, c).dataFrom !== null) && suggest(s, 'unnet -t ').completions.length > 0);
   check('net and unnet are actions', COMMANDS.net.tag === 'action' && COMMANDS.unnet.tag === 'action');
   check('demolish drops data links to a missing room cleanly', (() => { const t = rich(); run(t, 'build rack -l g5', 'wire -f h6 -t g5', 'net -f i6 -t g5', 'demolish -l g5'); step(t); return t.computeSupply === 0; })());
+}
+
+// --- Slice 4: the network switch ---------------------------------------------------------------------
+// A second reactor and a switch at L6 (3 cells from the hub), so racks beyond the hub's radius work.
+const base = (): State => {
+  const t = rich();
+  run(t, 'build reactor -l m5', 'build switch -l l6', 'wire -f m5 -t l6', 'net -f i6 -t l6');
+  return t;
+};
+{
+  const s = rich();
+  check('build compute lists the switch', text(s, 'build compute').includes('switch') && text(s, 'build compute').includes('Network Switch'), text(s, 'build compute'));
+  const built = execute(s, 'build switch -l i4');
+  check('build switch warns about wire and data', built.lines.filter((l) => l.kind === 'warn').map((l) => l.text).join(' | ').includes('No data yet'));
+  check('switch flags: not wired and not networked', /i4\s+Network Switch\s+ports \d+\/\d+\s+\[NOT WIRED, NOT NETWORKED\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  run(s, 'wire -f h6 -t i4');
+  check('wired but unlinked switch is still not networked', text(s, 'rooms').includes('NOT NETWORKED'));
+  check('hub links the switch', text(s, 'net -f i6 -t i4').startsWith('Linked data'));
+  check('switch is operational', /i4\s+Network Switch\s+ports \d+\/\d+\s+\[OPERATIONAL\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  const si = text(s, 'inspect i4');
+  check('inspect switch shows ports and hub connection', si.includes('Data ports: 0 / 4') && si.includes('Data radius: 4') && si.includes('connected to the hub'), si);
+  check('hub counts the switch as a port', text(s, 'inspect i6').includes('Data ports: 1 / 6'));
+  check('switch cannot be upgraded', text(s, 'upgrade -l i4').includes('cannot be upgraded') && !/i4/i.test(text(s, 'upgrade')), text(s, 'upgrade -l i4'));
+  check('switch refund is 10', (() => { const m = s.materials; run(s, 'demolish -l i4'); return s.materials - m === 10; })());
+}
+{
+  const s = base();
+  run(s, 'build rack -l o6', 'wire -f m5 -t o6');
+  step(s);
+  const far = text(s, 'net -f i6 -t o6');
+  check('rack beyond the hub radius is refused from the hub', far.startsWith('Out of range') && far.includes('6.0 cells'), far);
+  check('the switch can link it', text(s, 'net -f l6 -t o6').startsWith('Linked data from the Network Switch'));
+  check('rack behind the switch gives compute', s.computeSupply === 4, String(s.computeSupply));
+  check('inspect switch shows 1 port in use', text(s, 'inspect l6').includes('Data ports: 1 / 4'));
+  check('status compute lists the switch', text(s, 'status compute').includes('Network Switch L6  relaying, ports 1 / 4'), text(s, 'status compute'));
+
+  run(s, 'unwire -t l6');
+  check('unwiring the switch cuts everything behind it', s.computeSupply === 0 && /o6\s+Server Rack\s+\[NO DATA\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  check('the cut-off switch is flagged', /l6\s+Network Switch\s+ports \d+\/\d+\s+\[NOT WIRED\]/i.test(text(s, 'rooms')));
+  check('the link stays recorded', room(s, 'o6').dataFrom === room(s, 'l6').id);
+  check('status compute explains a cut-off rack', text(s, 'status compute').includes('Everything behind it has no data') && text(s, 'status compute').includes('cut off from the hub'), text(s, 'status compute'));
+  run(s, 'wire -f m5 -t l6');
+  check('rewiring the switch restores it', s.computeSupply === 4);
+
+  run(s, 'unnet -t l6');
+  check('unlinking the switch cuts the rack, keeping its link', s.computeSupply === 0 && room(s, 'o6').dataFrom !== null && /o6\s+Server Rack\s+\[NO DATA\]/i.test(text(s, 'rooms')) && /l6\s+Network Switch\s+ports \d+\/\d+\s+\[NOT NETWORKED\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  check('status alerts lists both', text(s, 'status alerts').includes('Network Switch at L6') && text(s, 'status alerts').includes('Server Rack at O6'), text(s, 'status alerts'));
+  run(s, 'net -f i6 -t l6');
+  check('relinking restores everything', s.computeSupply === 4);
+}
+{
+  // Ports.
+  const s = base();
+  for (const c of ['o6', 'm6', 'm7', 'n6', 'n7']) run(s, `build rack -l ${c}`, `wire -f m5 -t ${c}`);
+  for (const c of ['o6', 'm6', 'm7', 'n6']) run(s, `net -f l6 -t ${c}`);
+  check('four racks behind the switch give 16', s.computeSupply === 16, String(s.computeSupply));
+  check('inspect shows 4 / 4', text(s, 'inspect l6').includes('Data ports: 4 / 4'));
+  const full = text(s, 'net -f l6 -t n7');
+  check('fifth link is refused for ports', full.includes('Network Switch') && full.includes('no free ports') && full.includes('4 of 4'), full);
+  check('repeating a net link says it already exists, even when full', text(s, 'net -f l6 -t o6') === 'Server Rack at O6 is already linked to the Network Switch at L6.', text(s, 'net -f l6 -t o6'));
+}
+{
+  // Reroute from the hub to a switch.
+  const s = rich();
+  run(s, 'build switch -l i4', 'wire -f h6 -t i4', 'net -f i6 -t i4', 'build rack -l g5', 'wire -f h6 -t g5', 'net -f i6 -t g5');
+  check('hub has two ports in use', text(s, 'inspect i6').includes('Data ports: 2 / 6'));
+  const re = text(s, 'net -f i4 -t g5');
+  check('net from the switch reroutes the rack', re.startsWith('Rerouted data from the Network Switch'), re);
+  check('hub frees a port and the switch takes it', text(s, 'inspect i6').includes('Data ports: 1 / 6') && text(s, 'inspect i4').includes('Data ports: 1 / 4'));
+  check('the rack still works', s.computeSupply === 4);
+}
+{
+  // Chaining.
+  const s = base();
+  run(s, 'build switch -l p6', 'wire -f m5 -t p6', 'build rack -l p4', 'wire -f m5 -t p4');
+  check('second switch links from the first', text(s, 'net -f l6 -t p6').startsWith('Linked data from the Network Switch'));
+  check('rack behind the chain links', text(s, 'net -f p6 -t p4').startsWith('Linked data'));
+  check('compute works through two switches', s.computeSupply === 4, String(s.computeSupply));
+  run(s, 'unnet -t l6');
+  check('cutting the first switch cuts the whole chain', s.computeSupply === 0 && /p6\s+Network Switch\s+ports \d+\/\d+\s+\[NO DATA\]/i.test(text(s, 'rooms')) && /p4\s+Server Rack\s+\[NO DATA\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+  run(s, 'net -f i6 -t l6');
+  check('restoring the first switch restores the chain', s.computeSupply === 4);
+  run(s, 'unwire -t p6');
+  check('unwiring the second switch cuts only its rack', s.computeSupply === 0);
+  run(s, 'wire -f m5 -t p6');
+
+  // Loops and self links.
+  check('a switch cannot link to itself', text(s, 'net -f l6 -t l6').includes('cannot be linked to itself'));
+  check('self link preview is invalid', linkPreview(s, 'net -f l6 -t l6')?.valid === false);
+  check('switch to switch preview is valid', linkPreview(s, 'net -f l6 -t p6')?.valid === true);
+  run(s, 'net -f p6 -t l6');
+  check('two switches linked to each other both fail', !room(s, 'l6').data && !room(s, 'p6').data && s.computeSupply === 0, `${room(s, 'l6').data} ${room(s, 'p6').data}`);
+  run(s, 'net -f i6 -t l6');
+  check('relinking from the hub breaks the loop', room(s, 'l6').data && room(s, 'p6').data && s.computeSupply === 4);
+}
+{
+  // Demolishing a switch.
+  const s = base();
+  run(s, 'build rack -l o6', 'wire -f m5 -t o6', 'net -f l6 -t o6');
+  check('setup: rack works through the switch', s.computeSupply === 4);
+  run(s, 'demolish -l l6');
+  check('demolishing the switch drops the link and the compute', s.computeSupply === 0 && room(s, 'o6').dataFrom === null && /o6\s+Server Rack\s+\[NOT NETWORKED\]/i.test(text(s, 'rooms')), text(s, 'rooms'));
+}
+{
+  // Views and completion.
+  const s = base();
+  run(s, 'build rack -l o6');
+  check('view switch highlights switches', (execute(s, 'view switch').view?.highlight ?? []).includes('switch'));
+  check('view compute highlights racks and switches only', (() => { const h = execute(s, 'view compute').view?.highlight ?? []; return h.includes('rack') && h.includes('switch') && !h.includes('reactor'); })());
+  check('net -f offers the hub and switches', suggest(s, 'net -f ').completions.slice().sort().join(' ') === 'i6 l6', suggest(s, 'net -f ').completions.join(' '));
+  check('net -t offers racks and switches', suggest(s, 'net -f i6 -t ').completions.slice().sort().join(' ') === 'l6 o6', suggest(s, 'net -f i6 -t ').completions.join(' '));
+  check('net preview from a switch to a rack is valid', linkPreview(s, 'net -f l6 -t o6')?.valid === true);
+  check('net preview from a rack is invalid', linkPreview(s, 'net -f o6 -t l6')?.valid === false);
+}
+
+// --- Capacity: how much of a limited resource is used -------------------------------------------------
+{
+  const s = rich();
+  const cap = (cell: string) => capacityOf(s, room(s, cell));
+  check('the hub has no capacity row', cap('i6') === null);
+  check('reactor shows power load against output', JSON.stringify(cap('h6')) === JSON.stringify({ resource: 'power', label: 'load', used: 3, total: 12, broken: 0, offline: false }), JSON.stringify(cap('h6')));
+  check('oxygen plant shows pipes', cap('j6')?.used === 0 && cap('j6')?.total === 4 && cap('j6')?.resource === 'air');
+  check('rooms shows the numbers', text(s, 'rooms').includes('Reactor  load 3/12') && text(s, 'rooms').includes('Oxygen Plant  pipes 0/4'), text(s, 'rooms'));
+  run(s, 'build garden -l g5', 'build lounge -l g4', 'build rack -l g6');
+  check('garden, lounge and rack have no capacity row', cap('g5') === null && cap('g4') === null && cap('g6') === null);
+  check('hasCapacity matches', hasCapacity('switch') && hasCapacity('quarters') && !hasCapacity('hub') && !hasCapacity('garden'));
+
+  // Pipes: used counts recorded pipes; broken counts the ones that are not delivering.
+  run(s, 'build quarters -l j7', 'wire -f h6 -t j7', 'pipe -f j6 -t j7', 'build quarters -l k7', 'wire -f h6 -t k7', 'pipe -f j6 -t k7');
+  check('two pipes in use, none broken', cap('j6')?.used === 2 && cap('j6')?.broken === 0 && capacityText(cap('j6')!) === 'pipes 2/4');
+  run(s, 'unwire -t j6');
+  check('an unpowered plant makes its pipes broken', cap('j6')?.used === 2 && cap('j6')?.broken === 2, JSON.stringify(cap('j6')));
+  run(s, 'wire -f h6 -t j6', 'unpipe -t k7');
+  check('unpipe frees a pipe', cap('j6')?.used === 1 && cap('j6')?.broken === 0);
+
+  // Beds: the hub fills first, then working quarters in order.
+  check('quarters start empty while the hub has room', cap('j7')?.used === 0 && cap('j7')?.total === 2 && cap('j7')?.offline === false, JSON.stringify(cap('j7')));
+  for (let i = 0; i < 3; i++) s.crew.push({ name: `Extra${i}`, role: 'Engineer', housed: true });
+  check('extra crew fill the quarters once the hub is full', cap('j7')?.used === 2, JSON.stringify(cap('j7')));
+  check('rooms shows beds', text(s, 'rooms').includes('Quarters  beds 2/2'), text(s, 'rooms'));
+  run(s, 'upgrade -l j7');
+  check('Mk2 quarters have 3 beds and take the 7th crew member', cap('j7')?.total === 3 && cap('j7')?.used === 3, JSON.stringify(cap('j7')));
+  run(s, 'unwire -t j7');
+  check('quarters without power are offline and empty', cap('j7')?.offline === true && cap('j7')?.used === 0 && capacityText(cap('j7')!).includes('(offline)'), JSON.stringify(cap('j7')));
+  run(s, 'upgrade -l h6');
+  check('reactor Mk2 total is 18', cap('h6')?.total === 18);
+}
+{
+  const s = base();
+  const cap = () => capacityOf(s, room(s, 'l6'))!;
+  check('switch starts with free ports', cap().used === 0 && cap().total === 4 && cap().resource === 'data' && cap().broken === 0, JSON.stringify(cap()));
+  run(s, 'build rack -l o6', 'wire -f m5 -t o6', 'net -f l6 -t o6');
+  check('a linked rack uses a port', cap().used === 1 && capacityText(cap()) === 'ports 1/4');
+  run(s, 'unwire -t l6');
+  check('a cut-off switch shows its links as broken', cap().used === 1 && cap().broken === 1, JSON.stringify(cap()));
+  run(s, 'wire -f m5 -t l6', 'unnet -t o6');
+  check('unnet frees the port', cap().used === 0 && cap().broken === 0);
+}
+
+// --- Repeating a link ---------------------------------------------------------------------------------
+{
+  const s = rich();
+  run(s, 'build garden -l g5', 'wire -f h6 -t g5', 'build quarters -l j7', 'wire -f h6 -t j7', 'pipe -f j6 -t j7', 'build rack -l g6', 'wire -f h6 -t g6', 'net -f i6 -t g6');
+  const m = s.materials;
+  check('repeating wire says it already exists', text(s, 'wire -f h6 -t g5') === 'Hydroponics at G5 is already wired to the reactor at H6.', text(s, 'wire -f h6 -t g5'));
+  check('repeating pipe says it already exists', text(s, 'pipe -f j6 -t j7') === 'Quarters at J7 is already piped to the plant at J6.', text(s, 'pipe -f j6 -t j7'));
+  check('repeating net says it already exists', text(s, 'net -f i6 -t g6') === 'Server Rack at G6 is already linked to the Command Hub at I6.', text(s, 'net -f i6 -t g6'));
+  check('a repeated link is an error and changes nothing', kinds(s, 'net -f i6 -t g6')[0] === 'err' && s.materials === m && s.computeSupply === 4);
+  check('a different source still reroutes', (() => { const t = rich(); run(t, 'build reactor -l f6', 'build garden -l g5', 'wire -f h6 -t g5'); return text(t, 'wire -f f6 -t g5').startsWith('Rewired'); })());
+  // A link that exists but is not delivering says so.
+  const cut = base();
+  run(cut, 'build rack -l o6', 'wire -f m5 -t o6', 'net -f l6 -t o6', 'unwire -t l6');
+  const note = text(cut, 'net -f l6 -t o6');
+  check('a repeated link that is not delivering points at rooms', note === 'Server Rack at O6 is already linked to the Network Switch at L6. It is not getting data; see "rooms" for why.', note);
 }
 
 // --- Autofill / completion -------------------------------------------------------------------

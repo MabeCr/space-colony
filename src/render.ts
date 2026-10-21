@@ -1,4 +1,4 @@
-import { COLS, ROOM_DEFS, ROWS, coord, dist, nameOf, needsData, needsPower, roomAt, roomById, statsOf, type RoomType, type State } from './sim';
+import { COLS, ROOM_DEFS, ROWS, capacityOf, capacityText, coord, dist, hasCapacity, nameOf, needsData, needsPower, roomAt, roomById, statsOf, type Capacity, type Room, type RoomType, type State } from './sim';
 
 export interface View {
   selected: { x: number; y: number } | null;
@@ -15,6 +15,20 @@ export interface View {
   /** Wire or pipe being typed with both -from and -to set; `valid` is false if it would be refused. */
   linkGhost: { kind: 'wire' | 'pipe' | 'net'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null;
 }
+
+/**
+ * Capacity dots fade in as the cell size grows from the first value to the second (pixels), so they
+ * appear when you zoom in and fade out when you zoom out. The icons of rooms with dots lift and shrink by
+ * the same amount, so zoomed out they sit centred. The hover label has the numbers at any zoom.
+ */
+const DOTS_FADE_FROM = 48;
+const DOTS_FADE_TO = 66;
+
+/** Cell size (pixels) the status badges were drawn for; they scale from here. */
+const BADGE_REF_CELL = 46;
+
+const RED = '#ff6b6b';
+const CAPACITY_COLORS: Record<Capacity['resource'], string> = { data: '#b18cff', air: '#5ad1e6', beds: '#c19cf5', power: '#f7b955' };
 
 /** Colour of data links (violet). */
 const DATA_COLOR = 'rgba(177, 140, 255, 0.7)';
@@ -217,6 +231,7 @@ export class Renderer {
     ctx.setLineDash([]);
 
     // Rooms.
+    const dotFade = Math.min(1, Math.max(0, (cell - DOTS_FADE_FROM) / (DOTS_FADE_TO - DOTS_FADE_FROM)));
     const pulse = 0.5 + 0.5 * Math.sin(t / 220);
     for (const r of s.rooms) {
       const def = ROOM_DEFS[r.type];
@@ -229,18 +244,22 @@ export class Renderer {
       const y = oy + r.y * cell + 3;
       const sz = cell - 6;
       const base = (fr ? lit.has(r.id) : !v.highlight || v.highlight.includes(r.type)) ? 1 : DIM;
-      this.tile(r.type, r.x, r.y, (dead ? 0.55 : 1) * base, dead ? `rgba(255, 90, 90, ${0.5 + 0.5 * pulse})` : def.color, t, !dead, r.tier);
+      this.tile(r.type, r.x, r.y, (dead ? 0.55 : 1) * base, dead ? `rgba(255, 90, 90, ${0.5 + 0.5 * pulse})` : def.color, t, !dead, r.tier, hasCapacity(r.type) ? dotFade : 0);
+      const cap = capacityOf(s, r);
+      if (cap) this.capacity(r, cap, dotFade * base * (dead ? 0.55 : 1));
       ctx.globalAlpha = base;
       // Badges for what's missing: a bolt for power, a droplet for air.
-      let bx = x + sz - 7;
-      if (noPower) { badge(ctx, bx, y + 7, 'bolt', '#f7b955'); bx -= 14; }
-      if (noAir) { badge(ctx, bx, y + 7, 'drop', '#5ad1e6'); bx -= 14; }
-      if (noData) badge(ctx, bx, y + 7, 'data', '#b18cff');
+      // Badges scale with the cell so they keep their size relative to the tile at any zoom.
+      const bk = cell / BADGE_REF_CELL;
+      let bx = x + sz - 7 * bk;
+      if (noPower) { badge(ctx, bx, y + 7 * bk, 'bolt', '#f7b955', bk); bx -= 14 * bk; }
+      if (noAir) { badge(ctx, bx, y + 7 * bk, 'drop', '#5ad1e6', bk); bx -= 14 * bk; }
+      if (noData) badge(ctx, bx, y + 7 * bk, 'data', '#b18cff', bk);
       ctx.globalAlpha = 1;
     }
 
     // Translucent preview of the room about to be built.
-    if (v.ghost && ghostAt && ghostOpen) this.tile(v.ghost.type, ghostAt.x, ghostAt.y, GHOST_ALPHA, ROOM_DEFS[v.ghost.type].color, t, true);
+    if (v.ghost && ghostAt && ghostOpen) this.tile(v.ghost.type, ghostAt.x, ghostAt.y, GHOST_ALPHA, ROOM_DEFS[v.ghost.type].color, t, true, 1, hasCapacity(v.ghost.type) ? dotFade : 0);
     ctx.globalAlpha = 1;
 
     if (v.selected) this.box(v.selected.x, v.selected.y, '#ffffff', 0.9);
@@ -248,7 +267,8 @@ export class Renderer {
       this.box(v.hover.x, v.hover.y, '#7aa2f7', 0.7);
       ctx.fillStyle = 'rgba(8, 10, 20, 0.85)';
       const room = roomAt(s, v.hover.x, v.hover.y);
-      const label = `${coord(v.hover.x, v.hover.y)}${room ? ' ' + nameOf(room) : ''}`;
+      const hoverCap = room ? capacityOf(s, room) : null;
+      const label = `${coord(v.hover.x, v.hover.y)}${room ? ' ' + nameOf(room) : ''}${hoverCap ? '  ' + capacityText(hoverCap) : ''}`;
       ctx.font = '12px ui-monospace, Consolas, monospace';
       const tw = ctx.measureText(label).width + 12;
       const [cx, cy] = this.center(v.hover.x, v.hover.y);
@@ -260,7 +280,7 @@ export class Renderer {
   }
 
   /** A room's rounded tile and icon at a cell, drawn at the given opacity. Leaves globalAlpha changed. */
-  private tile(type: RoomType, cx: number, cy: number, alpha: number, stroke: string, t: number, active: boolean, tier = 1): void {
+  private tile(type: RoomType, cx: number, cy: number, alpha: number, stroke: string, t: number, active: boolean, tier = 1, capLift = 0): void {
     const { ctx } = this;
     const { cell, ox, oy } = this.geo;
     const x = ox + cx * cell + 3;
@@ -281,8 +301,54 @@ export class Renderer {
       ctx.stroke();
     }
     ctx.save();
-    ctx.translate(x + sz / 2, y + sz / 2);
-    drawIcon(ctx, type, sz * 0.36, color, t, active);
+    // Rooms with a capacity row draw a slightly smaller icon, nudged up to leave room for the dots.
+    // capLift (0 to 1) follows the dots' zoom fade, so zoomed out the icon sits centred at full size.
+    ctx.translate(x + sz / 2, y + sz / 2 - sz * 0.09 * capLift);
+    drawIcon(ctx, type, sz * (0.36 - 0.06 * capLift), color, t, active);
+    ctx.restore();
+  }
+
+  /**
+   * A row of dots along the bottom of a room: filled for used, red for used but not delivering, hollow
+   * for free. Reactor power is a continuous amount, so it is a thin bar instead.
+   */
+  private capacity(r: Room, c: Capacity, alpha: number): void {
+    if (alpha < 0.03 || c.total <= 0) return;
+    const { ctx } = this;
+    const { cell, ox, oy } = this.geo;
+    const sz = cell - 6;
+    const x = ox + r.x * cell + 3;
+    const y = oy + r.y * cell + 3;
+    const cy = y + sz * 0.81;
+    const color = CAPACITY_COLORS[c.resource];
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (c.resource === 'power') {
+      const w = sz * 0.7;
+      const h = sz * 0.08;
+      const bx = x + (sz - w) / 2;
+      ctx.fillStyle = 'rgba(11, 15, 30, 0.9)';
+      ctx.fillRect(bx, cy - h / 2, w, h);
+      ctx.fillStyle = c.used >= c.total ? RED : color;
+      ctx.fillRect(bx, cy - h / 2, w * Math.min(1, c.used / c.total), h);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1, cell * 0.022);
+      ctx.strokeRect(bx, cy - h / 2, w, h);
+    } else {
+      // Everything scales with the cell, so the dots keep their size relative to the tile at any zoom.
+      const rad = cell * 0.045;
+      const gap = Math.min(rad * 2 + cell * 0.05, (sz * 0.8) / c.total);
+      const stroke = Math.max(1, cell * 0.022);
+      const x0 = x + sz / 2 - ((c.total - 1) * gap) / 2;
+      for (let i = 0; i < c.total; i++) {
+        const used = i < c.used;
+        const bad = c.offline || (used && i >= c.used - c.broken);
+        ctx.beginPath();
+        ctx.arc(x0 + i * gap, cy, rad, 0, Math.PI * 2);
+        if (used && !c.offline) { ctx.fillStyle = bad ? RED : color; ctx.fill(); }
+        else { ctx.fillStyle = 'rgba(11, 15, 30, 0.8)'; ctx.fill(); ctx.strokeStyle = bad ? RED : color; ctx.lineWidth = stroke; ctx.stroke(); }
+      }
+    }
     ctx.restore();
   }
 
@@ -412,6 +478,15 @@ function drawIcon(ctx: CanvasRenderingContext2D, type: RoomType, r: number, colo
       }
       break;
     }
+    case 'switch': { // network hub: a centre node with four spokes
+      for (let i = 0; i < 4; i++) {
+        const a = Math.PI / 4 + (Math.PI / 2) * i;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r * 0.85, Math.sin(a) * r * 0.85); ctx.stroke();
+        ctx.beginPath(); ctx.arc(Math.cos(a) * r * 0.85, Math.sin(a) * r * 0.85, r * 0.17, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.3 + (active ? Math.sin(t / 400) * r * 0.04 : 0), 0, Math.PI * 2); ctx.fill();
+      break;
+    }
     case 'lounge': { // star
       ctx.beginPath();
       for (let i = 0; i < 10; i++) {
@@ -425,9 +500,10 @@ function drawIcon(ctx: CanvasRenderingContext2D, type: RoomType, r: number, colo
   }
 }
 
-function badge(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'bolt' | 'drop' | 'data', color: string): void {
+function badge(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'bolt' | 'drop' | 'data', color: string, scale = 1): void {
   ctx.save();
   ctx.translate(x, y);
+  ctx.scale(scale, scale);
   ctx.fillStyle = '#0b0f1e';
   ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = '#ff6b6b';
