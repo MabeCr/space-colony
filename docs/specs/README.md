@@ -15,16 +15,16 @@ These specs turn the decisions in [DESIGN.md](../DESIGN.md) (structures, tiers a
 |---|---|---|---|
 | 1 | [Categories](01-categories.md) | none | Done |
 | 2 | [Tiers and `upgrade`](02-tiers-and-upgrade.md) | 1 | Done |
-| 3 | [Compute capacity](03-compute-capacity.md) | 1 | Not started |
-| 4 | [Data link and network switch](04-data-link-and-switch.md) | 3 | Not started |
-| 5 | [`research`](05-research.md) | 2, 3, 4 | Not started |
+| 3 | [Compute capacity and the data link](03-compute-capacity.md) | 1 | Built, pending in-browser check |
+| 4 | [Network switch](04-data-link-and-switch.md) | 3 | Not started (the data link itself moved into Slice 3) |
+| 5 | [`research`](05-research.md) | 2, 3 | Not started |
 | 6 | [Multi-cell footprints](06-multi-cell-footprints.md) | none | **Parked** (Mk3 is 1x1 for now) |
 | 7 | [Mk3 buildings and the coolant link](07-mk3-and-coolant.md) | 2, 5 | Not started |
 | 8 | [Larger map and `survey`](08-map-and-survey.md) | 3, 5 | Not started |
 | 9 | [Industry and the cargo link](09-industry-and-cargo.md) | 5, 8 | Not started |
 | 10 | [Crew pool, roles and staffing](10-crew-and-staffing.md) | 2 | Not started |
 | 11 | [Academy and `train`](11-academy-and-training.md) | 5, 10 | Not started |
-| 12 | [Scripting: record and run](12-scripting-record-and-run.md) | 3, 4, 5 | Not started |
+| 12 | [Scripting: record and run](12-scripting-record-and-run.md) | 3, 5 | Not started |
 | 13 | [Scripting language, queries and events](13-scripting-language-and-queries.md) | 12 | **Design needed.** Not ready to build |
 
 Slice 6 is parked: Mk3 buildings stay 1x1 and use an adjacency rule instead (see Slice 7). Defense (turrets) is deliberately not in this track: it lands with Slice 2 of the main build order and needs coolant and cargo links to exist first.
@@ -40,7 +40,7 @@ Slice 6 is parked: Mk3 buildings stay 1x1 and use an adjacency rule instead (see
 
 ## Open questions that cut across slices
 
-- **Verb names for new links.** The specs use `net` (data), `chill` (coolant) and `belt` (cargo), each with an `un` counterpart. Settle these before Slice 4.
+- **Verb names for new links.** `net` (data, built in Slice 3) and the placeholders `chill` (coolant) and `belt` (cargo), each with an `un` counterpart. Settle the last two before Slices 7 and 9.
 - **Map size and layout** (Slice 8). The expansion question itself is settled: a larger map revealed with `survey` (DESIGN.md, "Map expansion and survey"). Still open: world size, where the start area sits, and cell names beyond column Z.
 - **Whether categories ever carry mechanics** (wave targeting, corruption weighting). Not needed by any slice here.
 - **Whether Mk3 consumes or replaces the Mk2** it grows out of. Decided: it is an add-on, built next to a Mk2 of its category (Slice 7).

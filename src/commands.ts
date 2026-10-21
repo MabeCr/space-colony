@@ -1,7 +1,7 @@
 import {
   BUILDABLE, CATEGORY_LABELS, CATEGORY_ORDER, COLONIST_FOOD, COLONIST_O2, COLS, HISTORY_CAP, HUB_CAPACITY, MATERIAL_PER_COLONIST, MAX_TIER, UPGRADE_COST,
-  ROOM_DEFS, ROWS, STOCK_CAP, addRoom, coord, dist, housingSlots, nameOf, needsPower, parseCoord, plantPipes,
-  reactorLoad, recompute, refundFor, roomAt, roomById, statsAt, statsOf, typesIn,
+  ROOM_DEFS, ROWS, STOCK_CAP, addRoom, coord, dist, housingSlots, isDataSource, nameOf, needsData, needsPower, parseCoord, plantPipes,
+  reactorLoad, recompute, refundFor, roomAt, roomById, sourcePorts, statsAt, statsOf, typesIn,
   type Category, type LogLine, type Room, type RoomType, type Sample, type State,
 } from './sim';
 import { asciiChart } from './chart';
@@ -150,6 +150,8 @@ function roomProblems(r: Room): string[] {
   else if (needsPower(r.type) && !r.powered) flags.push('NO POWER');
   if (r.type === 'quarters' && r.airFrom === null) flags.push('NOT PIPED');
   else if (r.type === 'quarters' && !r.breathable) flags.push('NO AIR');
+  if (needsData(r.type) && r.dataFrom === null) flags.push('NOT NETWORKED');
+  else if (needsData(r.type) && !r.data) flags.push('NO DATA');
   return flags;
 }
 
@@ -296,6 +298,29 @@ const STATUS_REPORTS: Record<string, Report> = {
     else lines.push(info(`  Next arrival: in ${plural(s.arrival, 'tick')}.`));
     return lines;
   },
+  compute: (s, w) => {
+    const racks = s.rooms.filter((r) => r.type === 'rack');
+    if (!racks.length) return [warn('No server racks yet. Build one: build rack -location <cell>, then wire it and net it.')];
+    const free = s.computeSupply - s.computeUsed;
+    const lines = [
+      ...graph('Compute capacity', w.map((x) => x.computeSupply), Math.max(...w.map((x) => x.computeSupply), 1)),
+      info(`  Capacity  ${s.computeSupply}   used ${s.computeUsed}   free ${free}`),
+    ];
+    const fixes: Record<string, string> = {
+      'NOT WIRED': 'wire -from <reactor> -to <cell>',
+      'NO POWER': 'out of range, or its reactor is overloaded',
+      'NOT NETWORKED': 'net -from <hub> -to <cell>',
+      'NO DATA': 'out of the source\'s data radius, or its ports are full',
+    };
+    for (const r of racks) {
+      const flags = roomProblems(r);
+      const here = coord(r.x, r.y);
+      if (!flags.length) lines.push(info(`  ${nameOf(r)} ${here}  online, +${statsOf(r).output}`));
+      else lines.push(warn(`  ${nameOf(r)} ${here}  ${flags.join(', ')}: ${flags.map((f) => fixes[f].replace('<cell>', here.toLowerCase())).join('; ')}`));
+    }
+    if (s.computeUsed > 0 && free <= 0) lines.push(warn('  No free compute. Build another rack.'));
+    return lines;
+  },
   happiness: (s, w) => {
     const target = 100 * (s.mood.air + s.mood.food + s.mood.housing + s.mood.fun) / 4;
     const parts: [string, number, string][] = [
@@ -357,6 +382,7 @@ export const COMMANDS: Record<string, Command> = {
       return {
         lines: [
           info(`Power       ${s.powerDemand} wanted / ${s.powerSupply} produced ${arrow(s, 'powerDemand')}`),
+          ...(s.rooms.some((r) => r.type === 'rack') ? [info(`Compute     ${s.computeUsed} used / ${s.computeSupply} capacity ${arrow(s, 'computeSupply')}`)] : []),
           info(`Oxygen      ${s.oxygen.toFixed(0)} ${arrow(s, 'oxygen')}`),
           info(`Food        ${s.food.toFixed(0)} ${arrow(s, 'food')}`),
           info(`Materials   ${Math.floor(s.materials)} ${arrow(s, 'materials')}`),
@@ -401,6 +427,7 @@ export const COMMANDS: Record<string, Command> = {
       const lines = [ok(`Built ${def.label} at ${here} for ${def.cost}.`)];
       if (needsPower(type)) lines.push(warn(`Not wired yet: wire -from <reactor> -to ${here}`));
       if (type === 'quarters') lines.push(warn(`No air yet: pipe -from <oxygen plant> -to ${here}`));
+      if (needsData(type)) lines.push(warn(`No data yet: net -from <hub> -to ${here}`));
       return { lines, select: p };
     },
   },
@@ -477,6 +504,43 @@ export const COMMANDS: Record<string, Command> = {
       to.airFrom = null;
       recompute(s);
       return { lines: [ok(`Disconnected air to ${at(to)}.`)] };
+    },
+  },
+  net: {
+    tag: 'action',
+    usage: 'net -from <hub> -to <rack>',
+    summary: 'Link a room that needs data (a rack) to the data network. The Command Hub is the root.',
+    flags: { '-from': 'Data source cell: the hub (alias -f).', '-to': 'Room that needs data (alias -t).' },
+    run: (s, a) => {
+      const from = roomFlag(s, a, '-from');
+      if (isResult(from)) return from;
+      const to = roomFlag(s, a, '-to');
+      if (isResult(to)) return to;
+      if (!isDataSource(from.type)) return err(`${at(from)} is not a data source.`);
+      if (!needsData(to.type)) return err(`${at(to)} does not use a data link.`);
+      const d = dist(from, to);
+      const { radius, ports } = statsOf(from);
+      if (d > radius) return err(`Out of range: ${at(to)} is ${d.toFixed(1)} cells away, and the data radius of the ${ROOM_DEFS[from.type].label} is ${radius}.`);
+      const used = s.rooms.filter((r) => r.dataFrom === from.id && r !== to).length;
+      if (used >= ports) return err(`The ${ROOM_DEFS[from.type].label} at ${coord(from.x, from.y)} has no free ports (${ports} of ${ports} in use). Unlink one with "unnet".`);
+      const rerouted = to.dataFrom !== null && to.dataFrom !== from.id;
+      to.dataFrom = from.id;
+      recompute(s);
+      return { lines: [ok(`${rerouted ? 'Rerouted' : 'Linked'} data from the ${ROOM_DEFS[from.type].label} at ${coord(from.x, from.y)} to ${at(to)}.`)], select: { x: to.x, y: to.y } };
+    },
+  },
+  unnet: {
+    tag: 'action',
+    usage: 'unnet -to <rack>',
+    summary: 'Cut the data link to a room.',
+    flags: { '-to': 'Room to disconnect (alias -t).' },
+    run: (s, a) => {
+      const to = roomFlag(s, a, '-to');
+      if (isResult(to)) return to;
+      if (to.dataFrom === null) return err(`${at(to)} has no data link.`);
+      to.dataFrom = null;
+      recompute(s);
+      return { lines: [ok(`Disconnected data to ${at(to)}.`)] };
     },
   },
   upgrade: {
@@ -557,7 +621,7 @@ export const COMMANDS: Record<string, Command> = {
       const def = ROOM_DEFS[r.type];
       const st = statsOf(r);
       const lines = [info(`${nameOf(r)} at ${coord(r.x, r.y)}  (#${r.id})`), info(`  ${def.desc}`)];
-      if (st.radius) lines.push(info(`  Radius: ${st.radius}`));
+      if (st.radius) lines.push(info(`  ${r.type === 'hub' ? 'Data radius' : 'Radius'}: ${st.radius}`));
       if (r.type === 'reactor') {
         const served = s.rooms.filter((x) => x.powerFrom === r.id);
         lines.push(info(`  Output: ${st.output}`), info(`  Load: ${reactorLoad(s, r.id)} / ${st.output}, wired to ${served.length} room(s)`));
@@ -578,6 +642,12 @@ export const COMMANDS: Record<string, Command> = {
         const src = roomById(s, r.airFrom);
         lines.push(r.airFrom === null ? warn('  Air: NOT PIPED') : r.breathable ? info(`  Air: flowing (plant at ${coord(src!.x, src!.y)})`) : warn('  Air: piped, but no supply (plant unpowered, out of range, or full)'));
         lines.push(info(`  Lounges in range: ${r.loungeCount}`));
+      } else if (r.type === 'hub') {
+        lines.push(info(`  Data ports: ${sourcePorts(s, r.id)} / ${st.ports} in use`));
+      } else if (r.type === 'rack') {
+        const src = roomById(s, r.dataFrom);
+        lines.push(info(`  Compute: +${st.output} while powered and networked${r.powered && r.data ? ' (online)' : ''}`));
+        lines.push(r.dataFrom === null ? warn('  Data: NOT NETWORKED') : r.data ? info(`  Data: linked (${ROOM_DEFS[src!.type].label} at ${coord(src!.x, src!.y)})`) : warn('  Data: linked, but not delivering (out of range or the source has no free ports)'));
       }
       return { lines, select: p, focus: p, view: { highlight: null } };
     },
@@ -698,9 +768,9 @@ export function buildPreview(input: string): { type: RoomType; at: { x: number; 
  * The connection a half-typed `wire` or `pipe` line would make, once both -from and -to are cells
  * holding rooms. `valid` covers room types and range, not spare capacity.
  */
-export function linkPreview(s: State, input: string): { kind: 'wire' | 'pipe'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null {
+export function linkPreview(s: State, input: string): { kind: 'wire' | 'pipe' | 'net'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null {
   const [name, ...rest] = input.trim().toLowerCase().split(/\s+/);
-  if (name !== 'wire' && name !== 'pipe') return null;
+  if (name !== 'wire' && name !== 'pipe' && name !== 'net') return null;
   const a = parseArgs(rest);
   const fp = a.flags['-from'] ? parseCoord(a.flags['-from']) : null;
   const tp = a.flags['-to'] ? parseCoord(a.flags['-to']) : null;
@@ -708,19 +778,21 @@ export function linkPreview(s: State, input: string): { kind: 'wire' | 'pipe'; f
   const from = roomAt(s, fp.x, fp.y);
   const to = roomAt(s, tp.x, tp.y);
   if (!from || !to) return null;
-  const srcType = name === 'wire' ? 'reactor' : 'oxygen';
-  const dstOk = name === 'wire' ? needsPower(to.type) : to.type === 'quarters';
-  return { kind: name, from: fp, to: tp, valid: from.type === srcType && dstOk && dist(from, to) <= statsOf(from).radius };
+  const srcOk = name === 'wire' ? from.type === 'reactor' : name === 'pipe' ? from.type === 'oxygen' : isDataSource(from.type);
+  const dstOk = name === 'wire' ? needsPower(to.type) : name === 'pipe' ? to.type === 'quarters' : needsData(to.type);
+  return { kind: name, from: fp, to: tp, valid: srcOk && dstOk && dist(from, to) <= statsOf(from).radius };
 }
 
 /** Cells of rooms that make sense as the value of a given flag, for completion. */
 function cellsFor(s: State, cmd: string, flag: string): string[] {
   const rooms = s.rooms.filter((r) => {
-    if (flag === '-from') return cmd === 'wire' ? r.type === 'reactor' : r.type === 'oxygen';
+    if (flag === '-from') return cmd === 'wire' ? r.type === 'reactor' : cmd === 'net' ? isDataSource(r.type) : r.type === 'oxygen';
     if (cmd === 'wire') return needsPower(r.type);
     if (cmd === 'pipe') return r.type === 'quarters';
+    if (cmd === 'net') return needsData(r.type);
     if (cmd === 'unwire') return r.powerFrom !== null;
     if (cmd === 'unpipe') return r.airFrom !== null;
+    if (cmd === 'unnet') return r.dataFrom !== null;
     if (cmd === 'upgrade') return canUpgrade(r);
     return cmd === 'demolish' ? r.type !== 'hub' : true;
   });

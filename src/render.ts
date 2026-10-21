@@ -13,8 +13,11 @@ export interface View {
   /** Set by `view <room type>`: rooms of other types (and their links) dim. The newest of view and inspect wins: each clears the other. */
   highlight: RoomType[] | null;
   /** Wire or pipe being typed with both -from and -to set; `valid` is false if it would be refused. */
-  linkGhost: { kind: 'wire' | 'pipe'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null;
+  linkGhost: { kind: 'wire' | 'pipe' | 'net'; from: { x: number; y: number }; to: { x: number; y: number }; valid: boolean } | null;
 }
+
+/** Colour of data links (violet). */
+const DATA_COLOR = 'rgba(177, 140, 255, 0.7)';
 
 /** Opacity of the ghost room shown for a pending build. */
 const GHOST_ALPHA = 0.4;
@@ -172,8 +175,8 @@ export class Renderer {
     if (fr) {
       lit.add(fr.id);
       for (const r of s.rooms) {
-        if (r.id === fr.id) { if (r.powerFrom !== null) lit.add(r.powerFrom); if (r.airFrom !== null) lit.add(r.airFrom); }
-        if (r.powerFrom === fr.id || r.airFrom === fr.id) lit.add(r.id);
+        if (r.id === fr.id) { if (r.powerFrom !== null) lit.add(r.powerFrom); if (r.airFrom !== null) lit.add(r.airFrom); if (r.dataFrom !== null) lit.add(r.dataFrom); }
+        if (r.powerFrom === fr.id || r.airFrom === fr.id || r.dataFrom === fr.id) lit.add(r.id);
       }
     }
     const DIM = 0.22;
@@ -181,6 +184,7 @@ export class Renderer {
     for (const r of s.rooms) {
       const wire = roomById(s, r.powerFrom);
       const plant = r.type === 'quarters' ? roomById(s, r.airFrom) : undefined;
+      const data = roomById(s, r.dataFrom);
       const touches = (a?: { id: number }) => !!fr && !!a && (a.id === fr.id || r.id === fr.id);
       if (wire) {
         const on = fr ? touches(wire) : !v.highlight;
@@ -194,13 +198,19 @@ export class Renderer {
         ctx.lineWidth = fr && on ? 2.5 : 1.5;
         this.link(plant, r, r.breathable, 'rgba(90, 209, 230, 0.65)', t, 3);
       }
+      if (data) {
+        const on = fr ? touches(data) : !v.highlight;
+        ctx.globalAlpha = on ? 1 : DIM;
+        ctx.lineWidth = fr && on ? 2.5 : 1.5;
+        this.link(data, r, r.data, DATA_COLOR, t, 4);
+      }
     }
     // Translucent preview of the wire or pipe about to be run; red and dotted if it would be refused.
     if (v.linkGhost) {
       const g = v.linkGhost;
       ctx.globalAlpha = GHOST_ALPHA;
       ctx.lineWidth = 1.5;
-      this.link(g.from, g.to, g.valid, g.kind === 'wire' ? 'rgba(247, 185, 85, 0.65)' : 'rgba(90, 209, 230, 0.65)', t, g.kind === 'pipe' ? 3 : 5);
+      this.link(g.from, g.to, g.valid, g.kind === 'wire' ? 'rgba(247, 185, 85, 0.65)' : g.kind === 'net' ? DATA_COLOR : 'rgba(90, 209, 230, 0.65)', t, g.kind === 'wire' ? 5 : g.kind === 'net' ? 4 : 3);
     }
     ctx.globalAlpha = 1;
     ctx.lineWidth = 1.5;
@@ -389,6 +399,15 @@ function drawIcon(ctx: CanvasRenderingContext2D, type: RoomType, r: number, colo
       ctx.beginPath(); ctx.moveTo(-r, r * 0.3); ctx.lineTo(r, r * 0.3); ctx.lineTo(r, r * 0.7); ctx.stroke();
       ctx.fillRect(-r * 0.15, -r * 0.25, r * 1.15, r * 0.5);
       ctx.beginPath(); ctx.arc(-r * 0.5, -r * 0.05, r * 0.22, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'rack': { // server stack: three units with status lights
+      for (let i = -1; i <= 1; i++) {
+        const y = i * r * 0.62;
+        ctx.strokeRect(-r * 0.85, y - r * 0.24, r * 1.7, r * 0.48);
+        ctx.beginPath(); ctx.arc(-r * 0.5, y, r * 0.09, 0, Math.PI * 2); ctx.fill();
+        if (active && Math.sin(t / 300 + i * 2) > 0) { ctx.beginPath(); ctx.arc(-r * 0.2, y, r * 0.09, 0, Math.PI * 2); ctx.fill(); }
+      }
       break;
     }
     case 'lounge': { // star

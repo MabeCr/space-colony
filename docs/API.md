@@ -52,7 +52,7 @@ Aliases are resolved globally before any command sees them, so they work the sam
 | Full flag | Meaning | Accepted forms |
 |---|---|---|
 | `-location` | The cell a command acts on (build site, demolish target, inspect target). | `-location`, `-loc`, `-l` |
-| `-from` | The source of a connection (reactor for `wire`, oxygen plant for `pipe`). | `-from`, `-f`, `-src` |
+| `-from` | The source of a connection (reactor for `wire`, oxygen plant for `pipe`, hub for `net`). | `-from`, `-f`, `-src` |
 | `-to` | The destination of a connection (or the room to disconnect). | `-to`, `-t`, `-dest`, `-destination` |
 
 Notes:
@@ -72,9 +72,11 @@ Valid values for `build <type>`. The Command Hub (`hub`) exists from the start a
 | `garden` | Hydroponics | 25 | 2 | — | Needs power. Makes 2 food per tick. |
 | `quarters` | Quarters | 20 | 1 | — | Needs a power wire **and** an air pipe. Houses 2 colonists and attracts new arrivals. |
 | `lounge` | Lounge | 30 | 2 | 3 | Needs power. Quarters within its radius get a happiness boost. |
+| `rack` | Server Rack | 35 | 2 | — | Needs power **and** a data link. Produces 4 compute capacity while both work. |
 
 Other limits used by the commands:
 
+- The Command Hub is the root of the data network: it has a **data radius of 5** and **6 ports**, so it can link up to 6 racks within 5 cells (see [`net`](#net)).
 - A Mk1 reactor supplies **12** power total (Mk2: 18). A Mk1 oxygen plant feeds at most **4** quarters (Mk2: 6). See [Tiers](#tiers).
 - Distances are straight-line (Euclidean) between cell centres, e.g. `h6` to `j7` is about 2.2.
 - `demolish` refunds half of everything spent on the room (build plus upgrade), rounded down.
@@ -92,6 +94,7 @@ Every buildable room starts at **Mk1** and can be upgraded in place to **Mk2** w
 | `garden` | 15 | output 2, draw 2 | output 3, draw 3 |
 | `quarters` | 12 | 2 beds | 3 beds |
 | `lounge` | 18 | radius 3 | radius 4 |
+| `rack` | 20 | compute 4, draw 2 | compute 6, draw 3 |
 
 The hub cannot be upgraded. Mk3 is a separate building, not an upgrade (not built yet). Mk2 rooms show as `Reactor Mk2` in `rooms`, `inspect`, messages and the map hover label, and have a second, inner border on the map.
 
@@ -102,12 +105,14 @@ The hub cannot be upgraded. Mk3 is a separate building, not an upgrade (not buil
 | Command | Usage | Summary |
 |---|---|---|
 | [`help`](#help) | `help [command]` | List commands, or explain one. |
-| [`status`](#status) | `status [oxygen | food | materials | colonists | happiness | power | alerts] [-time <ticks>]` | Colony overview, an alert list, or a graph and diagnosis of one category. |
+| [`status`](#status) | `status [oxygen | food | materials | colonists | happiness | power | compute | alerts] [-time <ticks>]` | Colony overview, an alert list, or a graph and diagnosis of one category. |
 | [`build`](#build) | `build [<category>]`, `build <type> -location <cell>` | Construct a room, or list categories and their types. |
 | [`wire`](#wire) | `wire -from <reactor> -to <room>` | Run a power line from a reactor to a room. |
 | [`unwire`](#unwire) | `unwire -to <room>` | Cut the power line to a room. |
 | [`pipe`](#pipe) | `pipe -from <oxygen plant> -to <quarters>` | Pipe air from an oxygen plant to quarters. |
 | [`unpipe`](#unpipe) | `unpipe -to <quarters>` | Cut the air pipe to quarters. |
+| [`net`](#net) | `net -from <hub> -to <rack>` | Link a rack to the data network. |
+| [`unnet`](#unnet) | `unnet -to <rack>` | Cut the data link to a rack. |
 | [`upgrade`](#upgrade) | `upgrade`, `upgrade -location <cell>` | List upgradable rooms, or upgrade one from Mk1 to Mk2. |
 | [`demolish`](#demolish) | `demolish -location <cell>` | Tear down a room for a 50% refund of everything spent on it. |
 | [`inspect`](#inspect) | `inspect -location <cell>` / `inspect reset` | Room details and map highlight. |
@@ -147,18 +152,19 @@ help build
 
 ```
 status
-status <oxygen | food | materials | colonists | happiness | power> [-time <ticks>]
+status <oxygen | food | materials | colonists | happiness | power | compute> [-time <ticks>]
 status alerts
 ```
 
 | Parameter | Form | Required | Description |
 |---|---|---|---|
-| `category` | positional | no | One of `oxygen`, `food`, `materials`, `colonists`, `happiness`, `power`, or `alerts`. Omit for the colony-wide overview. |
+| `category` | positional | no | One of `oxygen`, `food`, `materials`, `colonists`, `happiness`, `power`, `compute`, or `alerts`. Omit for the colony-wide overview. |
 | `-time <ticks>` | flag (no aliases; `-t` means `-to`) | no | How many ticks of history to graph, a whole number from `2` to `300`. Default `30`. Only used with a graphed category (not `alerts`). |
 
 **`status` alone** prints a colony-wide overview:
 
 - **Power** — `demand wanted / supply produced`
+- **Compute** — `used / capacity`. Shown only once a server rack has been built.
 - **Oxygen**, **Food** — current stock (0–100)
 - **Materials** — current stock, rounded down
 - **Population** — number of colonists
@@ -166,7 +172,7 @@ status alerts
 
 Each line ends with a trend arrow comparing now to 10 ticks ago: `▲` rising, `▼` falling, `–` steady (a change of under 0.05 per tick). The power arrow tracks power *wanted*. The arrows are neutral: `▲` on power wanted is not "good" or "bad" by itself.
 
-**`status alerts`** lists everything currently wrong, or `All clear.` Checks, in order: oxygen and food (depleted, below 20, or falling with a run-out forecast), power wanted above power produced, every room with a `rooms` problem flag (`NOT WIRED`, `NO POWER`, `NOT PIPED`, `NO AIR`), colonists with no bunk (by name), and happiness below 50 (no new arrivals).
+**`status alerts`** lists everything currently wrong, or `All clear.` Checks, in order: oxygen and food (depleted, below 20, or falling with a run-out forecast), power wanted above power produced, every room with a `rooms` problem flag (`NOT WIRED`, `NO POWER`, `NOT PIPED`, `NO AIR`, `NOT NETWORKED`, `NO DATA`), colonists with no bunk (by name), and happiness below 50 (no new arrivals).
 
 **`status <category>`** prints a column graph of that total over the last `-time` ticks (oldest on the left, `now` on the right, about 60 columns wide; longer windows are averaged down), a one-line trend summary (current value, rising/falling/steady, change over the window, change per tick, low and high), and diagnostics. Oxygen, food and happiness are graphed from 0 to 100; materials and colonists from 0 to the highest value in the window. If fewer ticks of history exist than requested, it graphs what there is and says so. A tick is one second at 1x.
 
@@ -177,6 +183,7 @@ Each line ends with a trend arrow comparing now to 10 ticks ago: `▲` rising, `
 | `materials` | Income per tick (1 + 0.5 per colonist), and for each buildable room type its cost and whether it is affordable now or in how many ticks. |
 | `colonists` | Total beds (hub 4 + working quarters x 2) and how many are free, housed versus no bunk, quarters that are not counted because they lack power or air, and the state of the next arrival: blocked (no free beds), paused (happiness below 50), or due in N ticks. |
 | `power` | Graphs power wanted (scaled up to the highest wanted or produced in the window). Then: wanted versus produced and the spare or shortfall, each reactor's load, spare capacity and number of rooms wired to it, and each power-using room that is not wired, out of range of its reactor, or on an overloaded reactor. Suggests another reactor when short. |
+| `compute` | Graphs compute capacity over time, then capacity, used and free (used is 0 until something reserves compute), each rack online or with its problem flags and the fix for each (`wire`, `net`), and a warning to build another rack if compute is in use and none is free. With no rack it says to build one. |
 | `happiness` | Where it is heading (the target the score moves 10% toward each tick), a bar for each of air, food, housing and fun, the weakest component with a suggestion, and a warning if it is below 50 (no arrivals). |
 
 Errors: `Unknown status option "<text>". Options: ...`, `-time must be a whole number of ticks from 2 to 300.`, or `Not enough history yet. Try again in a moment.` (before the first tick).
@@ -215,7 +222,8 @@ Categories group room types for browsing only; they never change how a room is b
 | `life` | oxygen |
 | `food` | garden |
 | `habitat` | quarters, lounge |
-| `industry`, `compute`, `defense`, `maint` | nothing yet (hidden from the list) |
+| `compute` | rack |
+| `industry`, `defense`, `maint` | nothing yet (hidden from the list) |
 
 Behaviour:
 
@@ -226,6 +234,7 @@ Behaviour:
 - Prints a warning if the new room still needs setup:
   - Any room that draws power (everything except a reactor): `Not wired yet: wire -from <reactor> -to <cell>`
   - Quarters: `No air yet: pipe -from <oxygen plant> -to <cell>`
+  - Server rack: `No data yet: net -from <hub> -to <cell>`
 
 Errors:
 
@@ -367,6 +376,62 @@ unpipe -to k7
 
 ---
 
+### net
+
+```
+net -from <hub> -to <rack>
+```
+
+| Parameter | Form | Aliases | Required | Description |
+|---|---|---|---|---|
+| `-from <cell>` | flag | `-f`, `-src` | yes | Cell of the data source. Only the Command Hub for now. |
+| `-to <cell>` | flag | `-t`, `-dest`, `-destination` | yes | Cell of the room that needs data (a server rack). |
+
+Behaviour:
+
+- Records a data link from the hub to the rack. The link delivers only while the rack is within the hub's data radius (**5**) and the hub has a free port (**6** ports). A rack produces compute only when it has **both** power and a working data link.
+- If the rack was linked to a different source, the link is **rerouted** (there is only the hub for now).
+- The map cursor moves to the rack. Data links draw in violet, animated when working and dotted red when broken, like wires and pipes.
+- Links persist when broken, as wires and pipes do.
+
+Errors:
+
+| Condition | Message |
+|---|---|
+| `-from` / `-to` missing | `Missing -from <cell>.` / `Missing -to <cell>.` |
+| Invalid cell, nothing built | The usual messages |
+| Source is not the hub | `<room> at <cell> is not a data source.` |
+| Target does not use data | `<room> at <cell> does not use a data link.` |
+| Out of range | `Out of range: <room> is <d> cells away, and the data radius of the Command Hub is 5.` |
+| Source has no free port | `The Command Hub at <cell> has no free ports (6 of 6 in use). Unlink one with "unnet".` |
+
+```
+net -from i6 -to g5
+net -f i6 -t g5
+```
+
+---
+
+### unnet
+
+```
+unnet -to <rack>
+```
+
+| Parameter | Form | Aliases | Required | Description |
+|---|---|---|---|---|
+| `-to <cell>` | flag | `-t`, `-dest`, `-destination` | yes | Room whose data link should be cut. |
+
+Errors: `Missing -to <cell>.`, invalid cell, `Nothing is built at <cell>.`, or `<room> at <cell> has no data link.`
+
+On success: `Disconnected data to <room> at <cell>.` The rack stops counting toward compute immediately.
+
+```
+unnet -to g5
+```
+
+---
+
 ### upgrade
 
 ```
@@ -410,11 +475,11 @@ Behaviour:
 
 - Removes the room and refunds **50%** of everything spent on it, build cost plus upgrade cost, rounded down.
 - Clears the map selection and connection highlight.
-- Any wires or pipes that pointed at a demolished reactor or oxygen plant are dropped the next time the simulation recomputes (the rooms they fed simply lose supply).
+- Any wires, pipes or data links that pointed at a demolished reactor, oxygen plant or data source are dropped the next time the simulation recomputes (the rooms they fed simply lose supply).
 
 Errors: `Missing -location <cell>.`, invalid cell, `Nothing is built at <cell>.`, or `You cannot demolish the Command Hub.`
 
-Refunds at Mk1: reactor 20, oxygen plant 15, hydroponics 12, quarters 10, lounge 15. At Mk2 they are half of build plus upgrade: reactor 32, oxygen plant 25, hydroponics 20, quarters 16, lounge 24.
+Refunds at Mk1: reactor 20, oxygen plant 15, hydroponics 12, quarters 10, lounge 15, server rack 17. At Mk2 they are half of build plus upgrade: reactor 32, oxygen plant 25, hydroponics 20, quarters 16, lounge 24, server rack 27.
 
 ```
 demolish -location e6
@@ -445,6 +510,7 @@ Behaviour:
   - Reactor: output, load (`used / output`) and number of rooms wired to it
   - Oxygen plant: output and pipes in use (`n / limit`); hydroponics: food output; quarters: beds
   - Power draw, for rooms that use power
+  - Hub: data radius and data ports in use (`n / 6`). Server rack: compute produced, and its data state (not networked, linked, or linked but not delivering)
   - Power-using rooms: `NOT WIRED`, online (and from which reactor), or wired but unsupplied (out of range or reactor overloaded)
   - Quarters: air status (`NOT PIPED`, flowing, or piped but unsupplied) and number of lounges in range
 - **On an empty cell**, prints `<cell>: empty space.` and clears the highlight.
@@ -477,6 +543,8 @@ No parameters. Lists every room as `<cell>  <label>`, with a bracketed problem l
 | `NO POWER` | Has a power line, but it is out of range or the reactor is overloaded. |
 | `NOT PIPED` | Quarters with no air pipe. |
 | `NO AIR` | Quarters with an air pipe that is not delivering (plant unpowered, out of range, or full). |
+| `NOT NETWORKED` | A room that needs data (server rack) with no data link. |
+| `NO DATA` | Has a data link that is not delivering (out of the source's data radius, or the source's ports are full). |
 
 A room with no problems ends with a green `[OPERATIONAL]` tag. This includes the Command Hub and reactors, which have nothing to connect.
 
@@ -574,8 +642,8 @@ While typing, a hint line shows the usage for the current command, and a `⇧↵
 | Line being typed | Result with cursor on cell `c` |
 |---|---|
 | `build <type> ...` | Sets `-location c` (replaces an existing one). |
-| `wire ...` or `pipe ...` | First fill sets `-from c`; the next sets `-to c`; after both exist it replaces `-to`. |
-| `unwire ...` or `unpipe ...` | Sets `-to c`. |
+| `wire ...`, `pipe ...` or `net ...` | First fill sets `-from c`; the next sets `-to c`; after both exist it replaces `-to`. |
+| `unwire ...`, `unpipe ...` or `unnet ...` | Sets `-to c`. |
 | `demolish ...` | Becomes `demolish -location c`. |
 | `upgrade ...` | Becomes `upgrade -location c`. |
 | empty line, or `inspect ...` | Becomes `inspect -location c`. |
@@ -598,6 +666,14 @@ Add housing:
 build quarters -l j7
 wire -f h6 -t j7
 pipe -f j6 -t j7
+```
+
+Add compute (a rack needs power and data):
+
+```
+build rack -l g5
+wire -f h6 -t g5
+net -f i6 -t g5
 ```
 
 Add a lounge near quarters:

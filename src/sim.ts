@@ -1,7 +1,7 @@
 export const COLS = 16;
 export const ROWS = 10;
 
-export type RoomType = 'hub' | 'reactor' | 'oxygen' | 'garden' | 'quarters' | 'lounge';
+export type RoomType = 'hub' | 'reactor' | 'oxygen' | 'garden' | 'quarters' | 'lounge' | 'rack';
 
 /** Filing and browsing groups for room types. Never changes how a room is built. */
 export type Category = 'power' | 'life' | 'food' | 'habitat' | 'industry' | 'compute' | 'defense' | 'maint';
@@ -27,15 +27,16 @@ export interface RoomDef {
 }
 
 export const ROOM_DEFS: Record<RoomType, RoomDef> = {
-  hub: { category: null, label: 'Command Hub', color: '#7aa2f7', cost: 0, draw: 0, radius: 0, desc: 'Your starting room. Houses 4 colonists on emergency cots.' },
+  hub: { category: null, label: 'Command Hub', color: '#7aa2f7', cost: 0, draw: 0, radius: 0, desc: 'Your starting room. Houses 4 colonists on emergency cots. Root of the data network: use "net" to link racks within its radius.' },
   reactor: { category: 'power', label: 'Reactor', color: '#f7b955', cost: 40, draw: 0, radius: 4, desc: 'Produces 12 power. Use "wire" to connect it to rooms within its radius.' },
   oxygen: { category: 'life', label: 'Oxygen Plant', color: '#5ad1e6', cost: 30, draw: 3, radius: 4, desc: 'Needs power. Use "pipe" to send air to up to 4 quarters within its radius.' },
   garden: { category: 'food', label: 'Hydroponics', color: '#7ad97a', cost: 25, draw: 2, radius: 0, desc: 'Needs power. Grows 2 food per tick.' },
   quarters: { category: 'habitat', label: 'Quarters', color: '#c19cf5', cost: 20, draw: 1, radius: 0, desc: 'Needs a power wire and an air pipe. Houses 2 colonists, and draws new arrivals.' },
+  rack: { category: 'compute', label: 'Server Rack', color: '#d9e86b', cost: 35, draw: 2, radius: 0, desc: 'Needs power and a data link. Produces 4 compute capacity. Use "wire" for power and "net" for data.' },
   lounge: { category: 'habitat', label: 'Lounge', color: '#f58cb4', cost: 30, draw: 2, radius: 3, desc: 'Needs power. Quarters within its radius get a happiness boost.' },
 };
 
-export const BUILDABLE: RoomType[] = ['reactor', 'oxygen', 'garden', 'quarters', 'lounge'];
+export const BUILDABLE: RoomType[] = ['reactor', 'oxygen', 'garden', 'quarters', 'lounge', 'rack'];
 
 /** Buildable room types in a category, in build order. */
 export const typesIn = (c: Category): RoomType[] => BUILDABLE.filter((t) => ROOM_DEFS[t].category === c);
@@ -59,11 +60,15 @@ export interface TierStats {
   pipes: number;
   /** Quarters: beds. */
   beds: number;
+  /** Data source: how many rooms it can link to. */
+  ports: number;
 }
 
-/** Mk1 values that are not already in ROOM_DEFS. */
+/** Mk1 values that are not already in ROOM_DEFS. The hub's radius is its data radius. */
 const MK1_EXTRA: Partial<Record<RoomType, Partial<TierStats>>> = {
+  hub: { radius: 5, ports: 6 },
   reactor: { output: 12 },
+  rack: { output: 4 },
   oxygen: { output: 3, pipes: 4 },
   garden: { output: 2 },
   quarters: { beds: 2 },
@@ -76,10 +81,11 @@ const MK2_CHANGES: Partial<Record<RoomType, Partial<TierStats>>> = {
   garden: { output: 3, draw: 3 },
   quarters: { beds: 3 },
   lounge: { radius: 4 },
+  rack: { output: 6, draw: 3 },
 };
 
 /** Materials to upgrade from Mk1 to Mk2 (placeholder). Types without an entry cannot be upgraded. */
-export const UPGRADE_COST: Partial<Record<RoomType, number>> = { reactor: 25, oxygen: 20, garden: 15, quarters: 12, lounge: 18 };
+export const UPGRADE_COST: Partial<Record<RoomType, number>> = { reactor: 25, oxygen: 20, garden: 15, quarters: 12, lounge: 18, rack: 20 };
 
 const statsFor = (type: RoomType, tier: number): TierStats => ({
   draw: ROOM_DEFS[type].draw,
@@ -87,6 +93,7 @@ const statsFor = (type: RoomType, tier: number): TierStats => ({
   output: 0,
   pipes: 0,
   beds: 0,
+  ports: 0,
   ...MK1_EXTRA[type],
   ...(tier >= 2 ? MK2_CHANGES[type] : undefined),
 });
@@ -126,6 +133,10 @@ export interface Room {
   powerFrom: number | null;
   /** Oxygen plant this room has been piped to (quarters only). */
   airFrom: number | null;
+  /** Hub (or switch) this room has been linked to for data (the link persists even if it stops working). */
+  dataFrom: number | null;
+  /** True when the data link is valid, in range, and the source has a free port. */
+  data: boolean;
   /** True when the wire is valid, in range, and the reactor has capacity. */
   powered: boolean;
   /** Quarters/hub only: air is actually reaching the room. */
@@ -157,6 +168,8 @@ export interface Sample {
   happiness: number;
   powerSupply: number;
   powerDemand: number;
+  computeSupply: number;
+  computeUsed: number;
 }
 
 /** How many ticks of history are kept for `status` graphs. */
@@ -178,6 +191,10 @@ export interface State {
   happiness: number;
   powerSupply: number;
   powerDemand: number;
+  /** Compute capacity: the sum of working racks (powered and networked). */
+  computeSupply: number;
+  /** Compute reserved by research, surveys and scripts. Nothing reserves any yet. */
+  computeUsed: number;
   /** Per-component happiness breakdown, each 0..1. */
   mood: { air: number; food: number; housing: number; fun: number };
 }
@@ -195,6 +212,12 @@ export function roomById(s: State, id: number | null): Room | undefined {
 }
 
 export const needsPower = (t: RoomType): boolean => ROOM_DEFS[t].draw > 0;
+
+/** Rooms that need a data link to work (racks for now; turrets and Mk3 rooms later). */
+export const needsData = (t: RoomType): boolean => t === 'rack';
+
+/** Rooms that can feed a data link (the hub for now; network switches in a later slice). */
+export const isDataSource = (t: RoomType): boolean => t === 'hub';
 
 export function newState(): State {
   const cx = Math.floor(COLS / 2);
@@ -218,6 +241,8 @@ export function newState(): State {
     happiness: 60,
     powerSupply: 0,
     powerDemand: 0,
+    computeSupply: 0,
+    computeUsed: 0,
     mood: { air: 1, food: 1, housing: 1, fun: 0 },
   };
   addRoom(s, 'hub', cx, cy);
@@ -230,12 +255,12 @@ export function newState(): State {
 }
 
 function record(s: State): void {
-  s.history.push({ oxygen: s.oxygen, food: s.food, materials: s.materials, colonists: s.crew.length, happiness: s.happiness, powerSupply: s.powerSupply, powerDemand: s.powerDemand });
+  s.history.push({ oxygen: s.oxygen, food: s.food, materials: s.materials, colonists: s.crew.length, happiness: s.happiness, powerSupply: s.powerSupply, powerDemand: s.powerDemand, computeSupply: s.computeSupply, computeUsed: s.computeUsed });
   if (s.history.length > HISTORY_CAP) s.history.shift();
 }
 
 export function addRoom(s: State, type: RoomType, x: number, y: number): Room {
-  const r: Room = { id: s.nextId++, type, tier: 1, x, y, powerFrom: null, airFrom: null, powered: type === 'reactor' || type === 'hub', breathable: false, loungeCount: 0 };
+  const r: Room = { id: s.nextId++, type, tier: 1, x, y, powerFrom: null, airFrom: null, dataFrom: null, data: false, powered: type === 'reactor' || type === 'hub', breathable: false, loungeCount: 0 };
   s.rooms.push(r);
   return r;
 }
@@ -243,6 +268,11 @@ export function addRoom(s: State, type: RoomType, x: number, y: number): Room {
 /** Power currently drawn from a reactor by rooms wired to it and working. */
 export function reactorLoad(s: State, reactorId: number): number {
   return s.rooms.filter((r) => r.powerFrom === reactorId && r.powered).reduce((n, r) => n + statsOf(r).draw, 0);
+}
+
+/** Number of rooms linked to a data source (recorded links, working or not). */
+export function sourcePorts(s: State, sourceId: number): number {
+  return s.rooms.filter((r) => r.dataFrom === sourceId).length;
 }
 
 /** Number of quarters currently receiving air from an oxygen plant. */
@@ -270,6 +300,21 @@ export function recompute(s: State): void {
   }
   s.powerSupply = reactors.reduce((n, x) => n + statsOf(x).output, 0);
   s.powerDemand = demand;
+
+  // Data links: a rack's link works when its source is in range and has a free port.
+  const ports = new Map<number, number>();
+  let compute = 0;
+  for (const r of s.rooms) {
+    if (!needsData(r.type)) continue;
+    r.data = false;
+    const src = s.rooms.find((x) => isDataSource(x.type) && x.id === r.dataFrom);
+    if (!src) { r.dataFrom = null; continue; }
+    if (dist(r, src) > statsOf(src).radius || (ports.get(src.id) ?? 0) >= statsOf(src).ports) continue;
+    ports.set(src.id, (ports.get(src.id) ?? 0) + 1);
+    r.data = true;
+  }
+  for (const r of s.rooms) if (r.type === 'rack' && r.powered && r.data) compute += statsOf(r).output;
+  s.computeSupply = compute;
 
   const pipes = new Map<number, number>();
   const lounges = s.rooms.filter((r) => r.type === 'lounge' && r.powered);
