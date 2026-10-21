@@ -320,18 +320,20 @@ export class Renderer {
     ctx.globalAlpha = alpha;
     if (c.resource === 'power') {
       const w = sz * 0.7;
-      const h = Math.max(3, sz * 0.08);
+      const h = sz * 0.08;
       const bx = x + (sz - w) / 2;
       ctx.fillStyle = 'rgba(11, 15, 30, 0.9)';
       ctx.fillRect(bx, cy - h / 2, w, h);
       ctx.fillStyle = c.used >= c.total ? RED : color;
       ctx.fillRect(bx, cy - h / 2, w * Math.min(1, c.used / c.total), h);
       ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(bx - 0.5, cy - h / 2 - 0.5, w + 1, h + 1);
+      ctx.lineWidth = Math.max(1, cell * 0.022);
+      ctx.strokeRect(bx, cy - h / 2, w, h);
     } else {
-      const rad = Math.max(1.5, Math.min(3.2, cell * 0.045));
-      const gap = Math.min(rad * 2 + 2.5, (sz * 0.8) / c.total);
+      // Everything scales with the cell, so the dots keep their size relative to the tile at any zoom.
+      const rad = cell * 0.045;
+      const gap = Math.min(rad * 2 + cell * 0.05, (sz * 0.8) / c.total);
+      const stroke = Math.max(1, cell * 0.022);
       const x0 = x + sz / 2 - ((c.total - 1) * gap) / 2;
       for (let i = 0; i < c.total; i++) {
         const used = i < c.used;
@@ -339,7 +341,7 @@ export class Renderer {
         ctx.beginPath();
         ctx.arc(x0 + i * gap, cy, rad, 0, Math.PI * 2);
         if (used && !c.offline) { ctx.fillStyle = bad ? RED : color; ctx.fill(); }
-        else { ctx.fillStyle = 'rgba(11, 15, 30, 0.8)'; ctx.fill(); ctx.strokeStyle = bad ? RED : color; ctx.lineWidth = 1.2; ctx.stroke(); }
+        else { ctx.fillStyle = 'rgba(11, 15, 30, 0.8)'; ctx.fill(); ctx.strokeStyle = bad ? RED : color; ctx.lineWidth = stroke; ctx.stroke(); }
       }
     }
     ctx.restore();
