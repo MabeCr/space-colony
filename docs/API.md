@@ -87,7 +87,7 @@ Other limits used by the commands:
 |---|---|---|
 | [`help`](#help) | `help [command]` | List commands, or explain one. |
 | [`status`](#status) | `status [oxygen | food | materials | colonists | happiness | power | alerts] [-time <ticks>]` | Colony overview, an alert list, or a graph and diagnosis of one category. |
-| [`build`](#build) | `build <type> -location <cell>` | Construct a room. |
+| [`build`](#build) | `build [<category>]`, `build <type> -location <cell>` | Construct a room, or list categories and their types. |
 | [`wire`](#wire) | `wire -from <reactor> -to <room>` | Run a power line from a reactor to a room. |
 | [`unwire`](#unwire) | `unwire -to <room>` | Cut the power line to a room. |
 | [`pipe`](#pipe) | `pipe -from <oxygen plant> -to <quarters>` | Pipe air from an oxygen plant to quarters. |
@@ -97,7 +97,7 @@ Other limits used by the commands:
 | [`rooms`](#rooms) | `rooms` | List every room and whether it is working. |
 | [`crew`](#crew) | `crew` | List colonists and who has a bunk. |
 | [`speed`](#speed) | `speed <1 \| 1/2 \| 1/4>` | Slow time down (no pause). |
-| [`view`](#view) | `view zoom <in\|out> [steps]`, `view pan <dir> [cells]`, `view <room type>`, `view reset` | Zoom, pan or highlight the map. |
+| [`view`](#view) | `view zoom <in\|out> [steps]`, `view pan <dir> [cells]`, `view <room type or category>`, `view reset` | Zoom, pan or highlight the map. |
 | [`clear`](#clear) | `clear` | Clear the terminal. |
 
 ---
@@ -180,16 +180,30 @@ History is kept for the last 300 ticks and is not saved between sessions.
 ### build
 
 ```
+build
+build <category>
 build <type> -location <cell>
 ```
 
 | Parameter | Form | Aliases | Required | Description |
 |---|---|---|---|---|
-| `type` | positional | — | yes | One of `reactor`, `oxygen`, `garden`, `quarters`, `lounge`. See [Room types](#room-types). |
-| `-location <cell>` | flag | `-loc`, `-l` | yes | Cell to build on. |
+| `type` or `category` | positional | — | no | A room type (`reactor`, `oxygen`, `garden`, `quarters`, `lounge`; see [Room types](#room-types)) to build, or a category to list. |
+| `-location <cell>` | flag | `-loc`, `-l` | with a type | Cell to build on. |
+
+Categories group room types for browsing only; they never change how a room is built. A category name never matches a room type name.
+
+| Category | Holds today |
+|---|---|
+| `power` | reactor |
+| `life` | oxygen |
+| `food` | garden |
+| `habitat` | quarters, lounge |
+| `industry`, `compute`, `defense`, `maint` | nothing yet (hidden from the list) |
 
 Behaviour:
 
+- `build` alone lists the categories that hold at least one type, with a count.
+- `build <category>` lists its types with cost, power draw and radius. A category with nothing in it prints a warning, not an error. If `-location` is also given, the category is still just listed.
 - Spends the room's cost from materials and places the room.
 - The map cursor moves to the new room.
 - Prints a warning if the new room still needs setup:
@@ -200,8 +214,8 @@ Errors:
 
 | Condition | Message |
 |---|---|
-| Type or `-location` missing | `Usage: build <type> -location <cell>   (try "help build")` |
-| Type not buildable (including `hub`) | `Unknown room type "<type>". Options: reactor, oxygen, garden, quarters, lounge.` |
+| Type given without `-location`, or `-location` without a type | `Usage: build <type> -location <cell>   (try "help build")` |
+| Type not buildable (including `hub`) | `Unknown room type "<type>". Options: reactor, oxygen, garden, quarters, lounge. Categories: power, life, food, habitat.` |
 | Invalid cell | `"<text>" is not a valid cell. ...` |
 | Cell already has a room | `<cell> is already occupied.` |
 | Not enough materials | `Not enough materials: <label> costs <cost>, you have <n>.` |
@@ -457,7 +471,7 @@ Anything else prints `Usage: speed <1 | 1/2 | 1/4>`. There is **no pause** and n
 ```
 view zoom <in|out> [steps]
 view pan <up|down|left|right> [cells]
-view <room type>
+view <room type or category>
 view reset
 ```
 
@@ -468,6 +482,7 @@ Controls the map camera and highlight. None of it affects the simulation. Has no
 | `view zoom in` / `view zoom out` | `steps`: optional positive number, default `1`, max `10` | Zooms about the centre of the map panel. Each step is 1.25x. Zoom is limited to 0.5x-4x of the fit-everything size. |
 | `view pan <direction>` | `direction`: `up`, `down`, `left` or `right`. `cells`: optional positive number, default `2`, max `50` | Moves the camera, so `left` shows what lies to the left. Distance is in cells at the current zoom. The map cannot be panned fully off screen. |
 | `view <room type>` | `hub`, `reactor`, `oxygen`, `garden`, `quarters` or `lounge`; plurals such as `gardens` also work | Lights up every room of that type, dims the other rooms and the links, and lists the matching cells. If none are built it prints a warning and clears any highlight. `inspect` focus takes precedence while active. |
+| `view <category>` | `power`, `life`, `food`, `habitat` (and later categories once they hold rooms) | Same as `view <room type>`, but for every room in the category. Prints a warning and clears the highlight if none are built. |
 | `view reset` | none | Restores the fit-everything view and clears the highlight. |
 
 Errors: `Usage: view zoom <in|out> [steps]`, `Usage: view pan <up|down|left|right> [cells]`, `Steps must be a number from above 0 to 10.`, `Cells must be a number from above 0 to 50.`, `Unknown view option "<text>". ...`
@@ -497,7 +512,7 @@ No parameters. Clears all text in the terminal. Game state and the map highlight
 | Key | Action |
 |---|---|
 | `Enter` | Run the current line. |
-| `Tab` | Autocomplete the token being typed: commands, flags (excluding ones already used), room types after `build`, speeds after `speed`, command names after `help`, `reset` after `inspect`, and valid cells after a flag. Multiple matches complete to their common prefix. |
+| `Tab` | Autocomplete the token being typed: commands, flags (excluding ones already used), categories and room types after `build` (and `view`), speeds after `speed`, command names after `help`, `reset` after `inspect`, and valid cells after a flag. Multiple matches complete to their common prefix. |
 | `Esc` | Clear the line being typed (and the previews that come from it). Does not touch the map cursor or highlight. |
 | `Up` / `Down` | Recall previous / next command from history. |
 | `Shift` + arrow keys | Move the map cursor (starts at the map centre if nothing is selected). |

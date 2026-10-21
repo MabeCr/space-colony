@@ -1,8 +1,8 @@
 import {
-  BUILDABLE, COLONIST_FOOD, COLONIST_O2, COLS, GARDEN_OUTPUT, HISTORY_CAP, HUB_CAPACITY, MATERIAL_PER_COLONIST, OXYGEN_OUTPUT, OXYGEN_PIPES,
+  BUILDABLE, CATEGORY_LABELS, CATEGORY_ORDER, COLONIST_FOOD, COLONIST_O2, COLS, GARDEN_OUTPUT, HISTORY_CAP, HUB_CAPACITY, MATERIAL_PER_COLONIST, OXYGEN_OUTPUT, OXYGEN_PIPES,
   QUARTERS_CAPACITY, ROOM_DEFS, ROWS, REACTOR_OUTPUT, STOCK_CAP, addRoom, coord, dist, housingSlots, needsPower, parseCoord, plantPipes,
-  reactorLoad, recompute, roomAt, roomById,
-  type LogLine, type Room, type RoomType, type Sample, type State,
+  reactorLoad, recompute, roomAt, roomById, typesIn,
+  type Category, type LogLine, type Room, type RoomType, type Sample, type State,
 } from './sim';
 import { asciiChart } from './chart';
 
@@ -14,8 +14,8 @@ export interface ViewAction {
   pan?: { x: number; y: number };
   /** Return to the fit-everything view. */
   reset?: boolean;
-  /** Light up every room of this type and dim the rest; null clears it. Omitted leaves it alone. */
-  highlight?: RoomType | null;
+  /** Light up every room of these types and dim the rest; null clears it. Omitted leaves it alone. */
+  highlight?: RoomType[] | null;
 }
 
 export interface CommandResult {
@@ -74,6 +74,26 @@ function isRoomType(t: string): t is RoomType {
 }
 
 const ROOM_TYPES = Object.keys(ROOM_DEFS) as RoomType[];
+
+function isCategory(t: string): t is Category {
+  return (CATEGORY_ORDER as string[]).includes(t);
+}
+
+/** Categories that have at least one buildable type; empty ones stay hidden until they do. */
+const activeCategories = (): Category[] => CATEGORY_ORDER.filter((c) => typesIn(c).length > 0);
+
+/** One line per type in a category: type, label, cost, power draw, radius. Columns size to the longest entry. */
+function categoryListing(c: Category): LogLine[] {
+  const types = typesIn(c);
+  const rows = types.map((t) => {
+    const d = ROOM_DEFS[t];
+    return [t, d.label, String(d.cost), `draw ${d.draw}`, d.radius ? `radius ${d.radius}` : ''];
+  });
+  const widths = [0, 1, 2, 3].map((i) => Math.max(...rows.map((r) => r[i].length)));
+  return rows.map((r) => info('  ' + r.map((v, i) => (i === 2 ? v.padStart(widths[i]) : v.padEnd(widths[i]))).join('  ').trimEnd()));
+}
+
+const categoryNames = () => activeCategories().join(', ');
 const ZOOM_STEP = 1.25;
 const MAX_ZOOM_STEPS = 10;
 const DEFAULT_PAN_CELLS = 2;
@@ -334,14 +354,25 @@ export const COMMANDS: Record<string, Command> = {
   },
   build: {
     tag: 'action',
-    usage: 'build <type> -location <cell>   e.g. build reactor -location B4',
-    summary: `Construct a room. Types: ${BUILDABLE.join(', ')}.`,
+    usage: 'build [<category>] | build <type> -location <cell>   e.g. build reactor -location B4',
+    summary: `Construct a room. Types: ${BUILDABLE.join(', ')}. Give a category (${CATEGORY_ORDER.join(', ')}) instead of a type to list what it holds; "build" alone lists the categories.`,
     flags: { '-location': 'Cell to build on (alias -loc, -l).' },
     run: (s, a) => {
       const type = a.pos[0];
       const cell = a.flags['-location'];
-      if (!type || !cell) return err('Usage: build <type> -location <cell>   (try "help build")');
-      if (!isRoomType(type)) return err(`Unknown room type "${type}". Options: ${BUILDABLE.join(', ')}.`);
+      if (!type && !cell) {
+        const lines = [info('Categories:')];
+        for (const c of activeCategories()) lines.push(info(`  ${c.padEnd(8)} ${plural(typesIn(c).length, 'type')}`));
+        lines.push(info('Try: build <category>   or   build <type> -location <cell>'));
+        return { lines };
+      }
+      if (!type) return err('Usage: build <type> -location <cell>   (try "help build")');
+      if (!isRoomType(type) && isCategory(type)) {
+        if (!typesIn(type).length) return { lines: [warn(`Nothing in ${type} (${CATEGORY_LABELS[type]}) is available yet. Categories with rooms: ${categoryNames()}.`)] };
+        return { lines: [info(`${CATEGORY_LABELS[type]} (${type}):`), ...categoryListing(type), info('Build one with: build <type> -location <cell>')] };
+      }
+      if (!isRoomType(type)) return err(`Unknown room type "${type}". Options: ${BUILDABLE.join(', ')}. Categories: ${categoryNames()}.`);
+      if (!cell) return err('Usage: build <type> -location <cell>   (try "help build")');
       const p = parseCoord(cell);
       if (!p) return err(cellErr(cell));
       if (roomAt(s, p.x, p.y)) return err(`${coord(p.x, p.y)} is already occupied.`);
@@ -516,8 +547,8 @@ export const COMMANDS: Record<string, Command> = {
   },
   view: {
     tag: 'ui',
-    usage: 'view zoom <in|out> [steps] | view pan <up|down|left|right> [cells] | view <room type> | view reset',
-    summary: 'Zoom, pan, or highlight the map. "reset" restores the full view and clears any highlight.',
+    usage: 'view zoom <in|out> [steps] | view pan <up|down|left|right> [cells] | view <room type or category> | view reset',
+    summary: 'Zoom, pan, or highlight the map by room type or category. "reset" restores the full view and clears any highlight.',
     run: (s, { pos: [sub, a, b] }) => {
       if (sub === 'reset') return { lines: [ok('View reset.')], view: { reset: true, highlight: null } };
 
@@ -540,13 +571,23 @@ export const COMMANDS: Record<string, Command> = {
       if (sub) {
         // "view garden" (or "gardens"): light up every room of that type.
         const type = ROOM_TYPES.find((t) => t === sub || t + 's' === sub);
-        if (!type) return err(`Unknown view option "${sub}". Try: zoom, pan, reset, or a room type (${ROOM_TYPES.join(', ')}).`);
-        const found = s.rooms.filter((r) => r.type === type);
-        if (!found.length) return { lines: [warn(`No ${ROOM_DEFS[type].label} built.`)], view: { highlight: null } };
-        const cells = found.map((r) => coord(r.x, r.y)).join(', ');
-        return { lines: [ok(`Highlighting ${found.length} ${ROOM_DEFS[type].label}: ${cells}. "view reset" clears it.`)], view: { highlight: type } };
+        if (type) {
+          const found = s.rooms.filter((r) => r.type === type);
+          if (!found.length) return { lines: [warn(`No ${ROOM_DEFS[type].label} built.`)], view: { highlight: null } };
+          const cells = found.map((r) => coord(r.x, r.y)).join(', ');
+          return { lines: [ok(`Highlighting ${found.length} ${ROOM_DEFS[type].label}: ${cells}. "view reset" clears it.`)], view: { highlight: [type] } };
+        }
+        // "view habitat": light up every room in that category.
+        if (isCategory(sub)) {
+          const types = ROOM_TYPES.filter((t) => ROOM_DEFS[t].category === sub);
+          const found = s.rooms.filter((r) => types.includes(r.type));
+          if (!found.length) return { lines: [warn(`No ${CATEGORY_LABELS[sub]} rooms built.`)], view: { highlight: null } };
+          const cells = found.map((r) => coord(r.x, r.y)).join(', ');
+          return { lines: [ok(`Highlighting ${found.length} ${CATEGORY_LABELS[sub]} room${found.length === 1 ? '' : 's'}: ${cells}. "view reset" clears it.`)], view: { highlight: types } };
+        }
+        return err(`Unknown view option "${sub}". Try: zoom, pan, reset, a room type (${ROOM_TYPES.join(', ')}) or a category (${categoryNames()}).`);
       }
-      return err('Usage: view zoom <in|out> [steps] | view pan <dir> [cells] | view <room type> | view reset');
+      return err('Usage: view zoom <in|out> [steps] | view pan <dir> [cells] | view <room type or category> | view reset');
     },
   },
   clear: {
@@ -638,7 +679,7 @@ export function suggest(s: State, input: string): { completions: string[]; parti
       options = [...(tokens.length === 1 ? STATUS_VIEWS : []), ...(usedFlags.has('-time') ? [] : ['-time'])];
     }
   } else if (name === 'view') {
-    if (tokens.length === 1) options = ['zoom', 'pan', 'reset', ...ROOM_TYPES];
+    if (tokens.length === 1) options = ['zoom', 'pan', 'reset', ...ROOM_TYPES, ...activeCategories()];
     else if (tokens.length === 2 && tokens[1] === 'zoom') options = ['in', 'out'];
     else if (tokens.length === 2 && tokens[1] === 'pan') options = Object.keys(PAN_DIRS);
   }
@@ -646,8 +687,8 @@ export function suggest(s: State, input: string): { completions: string[]; parti
     options = cellsFor(s, name, flagContext);
     hint = `${flagContext} expects a cell like B4. ${options.length ? 'Valid: ' + options.join(' ') : ''}`;
   } else if (name === 'build' && tokens.length === 1) {
-    options = BUILDABLE;
-    hint = BUILDABLE.map((t) => `${t}(${ROOM_DEFS[t].cost})`).join('  ');
+    options = [...activeCategories(), ...BUILDABLE];
+    hint = `Categories: ${categoryNames()}.  Types: ${BUILDABLE.map((t) => `${t}(${ROOM_DEFS[t].cost})`).join('  ')}`;
   } else if (COMMANDS[name]?.flags) {
     options = Object.keys(COMMANDS[name].flags!).filter((f) => !usedFlags.has(f));
     if (name === 'inspect' && tokens.length === 1) options.push('reset');
