@@ -1,7 +1,7 @@
 import {
-  BUILDABLE, CATEGORY_LABELS, CATEGORY_ORDER, COLONIST_FOOD, COLONIST_O2, COLS, GARDEN_OUTPUT, HISTORY_CAP, HUB_CAPACITY, MATERIAL_PER_COLONIST, OXYGEN_OUTPUT, OXYGEN_PIPES,
-  QUARTERS_CAPACITY, ROOM_DEFS, ROWS, REACTOR_OUTPUT, STOCK_CAP, addRoom, coord, dist, housingSlots, needsPower, parseCoord, plantPipes,
-  reactorLoad, recompute, roomAt, roomById, typesIn,
+  BUILDABLE, CATEGORY_LABELS, CATEGORY_ORDER, COLONIST_FOOD, COLONIST_O2, COLS, HISTORY_CAP, HUB_CAPACITY, MATERIAL_PER_COLONIST, MAX_TIER, UPGRADE_COST,
+  ROOM_DEFS, ROWS, STOCK_CAP, addRoom, coord, dist, housingSlots, nameOf, needsPower, parseCoord, plantPipes,
+  reactorLoad, recompute, refundFor, roomAt, roomById, statsAt, statsOf, typesIn,
   type Category, type LogLine, type Room, type RoomType, type Sample, type State,
 } from './sim';
 import { asciiChart } from './chart';
@@ -42,6 +42,8 @@ interface Command {
   tag: 'action' | 'query' | 'ui';
   /** Flags this command understands, with a short description of their value. */
   flags?: Record<string, string>;
+  /** Extra explanation shown only by `help <command>`, so the one-line hint stays short. */
+  details?: string;
   run: (s: State, a: Args) => CommandResult;
 }
 
@@ -121,7 +123,19 @@ function roomFlag(s: State, a: Args, flag: string): Room | CommandResult {
   return r;
 }
 const isResult = (v: Room | CommandResult): v is CommandResult => 'lines' in v;
-const at = (r: Room) => `${ROOM_DEFS[r.type].label} at ${coord(r.x, r.y)}`;
+const at = (r: Room) => `${nameOf(r)} at ${coord(r.x, r.y)}`;
+
+// --- upgrades ----------------------------------------------------------------------
+
+const canUpgrade = (r: Room): boolean => r.tier < MAX_TIER && UPGRADE_COST[r.type] !== undefined;
+
+/** The stat changes of a Mk1 to Mk2 upgrade for a room type, e.g. "output 12 -> 18, radius 4 -> 5". */
+function upgradeChanges(type: RoomType): string {
+  const a = statsAt(type, 1);
+  const b = statsAt(type, 2);
+  const names: [keyof typeof a, string][] = [['output', 'output'], ['radius', 'radius'], ['pipes', 'pipes'], ['beds', 'beds'], ['draw', 'power draw']];
+  return names.filter(([k]) => a[k] !== b[k]).map(([k, n]) => `${n} ${a[k]} -> ${b[k]}`).join(', ');
+}
 
 // --- status reports ----------------------------------------------------------------
 
@@ -141,8 +155,8 @@ function roomProblems(r: Room): string[] {
 
 /** Net change per tick of the oxygen or food stock at the current setup, ignoring the stock cap. */
 function stockNet(s: State, key: 'oxygen' | 'food'): number {
-  const [type, output, perHead] = key === 'oxygen' ? (['oxygen', OXYGEN_OUTPUT, COLONIST_O2] as const) : (['garden', GARDEN_OUTPUT, COLONIST_FOOD] as const);
-  return s.rooms.filter((r) => r.type === type && r.powered).length * output - s.crew.length * perHead;
+  const [type, perHead] = key === 'oxygen' ? (['oxygen', COLONIST_O2] as const) : (['garden', COLONIST_FOOD] as const);
+  return s.rooms.filter((r) => r.type === type && r.powered).reduce((n, r) => n + statsOf(r).output, 0) - s.crew.length * perHead;
 }
 
 /** ▲ / ▼ / – for how a series has moved over the last few ticks. */
@@ -166,7 +180,7 @@ function alerts(s: State): LogLine[] {
   if (s.powerDemand > s.powerSupply) bad(`Power is short: ${s.powerDemand} wanted, ${s.powerSupply} produced. See "status power".`);
   for (const r of s.rooms) {
     const flags = roomProblems(r);
-    if (flags.length) bad(`${ROOM_DEFS[r.type].label} at ${coord(r.x, r.y)}: ${flags.join(', ')}.`);
+    if (flags.length) bad(`${nameOf(r)} at ${coord(r.x, r.y)}: ${flags.join(', ')}.`);
   }
   const unhoused = s.crew.filter((c) => !c.housed);
   if (unhoused.length) bad(`${plural(unhoused.length, 'colonist')} with no bunk: ${unhoused.map((c) => c.name).join(', ')}.`);
@@ -201,15 +215,15 @@ function forecast(stock: number, net: number, cap: number, what: string): string
   return stock >= cap ? `${what} is full.` : `${what} is holding steady.`;
 }
 
-function stockReport(title: string, key: 'oxygen' | 'food', unitLabel: string, makers: Room[], output: number, perHead: number, remedy: string): Report {
+function stockReport(title: string, key: 'oxygen' | 'food', unitLabel: string, makers: Room[], perHead: number, remedy: string): Report {
   return (s, w) => {
     const working = makers.filter((r) => r.powered);
-    const made = working.length * output;
+    const made = working.reduce((n, r) => n + statsOf(r).output, 0);
     const used = s.crew.length * perHead;
     const net = made - used;
     const lines = [
       ...graph(title, w.map((x) => x[key]), STOCK_CAP),
-      info(`  Made      ${made.toFixed(1)}/tick  (${working.length} of ${plural(makers.length, unitLabel)} powered, ${output} each)`),
+      info(`  Made      ${made.toFixed(1)}/tick  (${working.length} of ${plural(makers.length, unitLabel)} powered)`),
       info(`  Used      ${used.toFixed(1)}/tick  (${plural(s.crew.length, 'colonist')} x ${perHead})`),
       (net < 0 ? warn : info)(`  Net       ${signed(net)}/tick. ${forecast(s[key], net, STOCK_CAP, title)}`),
     ];
@@ -226,30 +240,31 @@ const STATUS_REPORTS: Record<string, Report> = {
     const spare = s.powerSupply - s.powerDemand;
     const lines = [
       ...graph('Power wanted', w.map((x) => x.powerDemand), top),
-      (spare < 0 ? warn : info)(`  Wanted ${s.powerDemand}, produced ${s.powerSupply} (${plural(reactors.length, 'reactor')} x ${REACTOR_OUTPUT}): ${spare < 0 ? `${-spare} short` : `${spare} spare`}.`),
+      (spare < 0 ? warn : info)(`  Wanted ${s.powerDemand}, produced ${s.powerSupply} (${plural(reactors.length, 'reactor')}): ${spare < 0 ? `${-spare} short` : `${spare} spare`}.`),
     ];
     for (const rx of reactors) {
       const load = reactorLoad(s, rx.id);
       const fed = s.rooms.filter((r) => r.powerFrom === rx.id).length;
-      lines.push((load >= REACTOR_OUTPUT ? warn : info)(`  Reactor ${coord(rx.x, rx.y)}  ${load}/${REACTOR_OUTPUT} used, ${REACTOR_OUTPUT - load} spare, wired to ${plural(fed, 'room')}`));
+      const out = statsOf(rx).output;
+      lines.push((load >= out ? warn : info)(`  ${nameOf(rx)} ${coord(rx.x, rx.y)}  ${load}/${out} used, ${out - load} spare, wired to ${plural(fed, 'room')}`));
     }
     for (const r of s.rooms) {
       if (!needsPower(r.type)) continue;
-      const where = `${ROOM_DEFS[r.type].label} at ${coord(r.x, r.y)}`;
+      const where = `${nameOf(r)} at ${coord(r.x, r.y)}`;
       const src = roomById(s, r.powerFrom);
-      if (!src) lines.push(warn(`  ${where}: not wired. Needs ${ROOM_DEFS[r.type].draw}.`));
+      if (!src) lines.push(warn(`  ${where}: not wired. Needs ${statsOf(r).draw}.`));
       else if (!r.powered) {
-        const far = dist(r, src) > ROOM_DEFS.reactor.radius;
-        lines.push(warn(`  ${where}: wired to ${coord(src.x, src.y)} but ${far ? 'out of range' : 'that reactor is overloaded'}. Needs ${ROOM_DEFS[r.type].draw}.`));
+        const far = dist(r, src) > statsOf(src).radius;
+        lines.push(warn(`  ${where}: wired to ${coord(src.x, src.y)} but ${far ? 'out of range' : 'that reactor is overloaded'}. Needs ${statsOf(r).draw}.`));
       }
     }
     if (spare < 0) lines.push(warn('  Build another reactor, then wire the unpowered rooms to it.'));
     return lines;
   },
-  oxygen: (s, w) => stockReport('Oxygen', 'oxygen', 'oxygen plant', s.rooms.filter((r) => r.type === 'oxygen'), OXYGEN_OUTPUT, COLONIST_O2,
-    'Build and wire another oxygen plant (each makes 3, and each colonist breathes 0.5).')(s, w),
-  food: (s, w) => stockReport('Food', 'food', 'garden', s.rooms.filter((r) => r.type === 'garden'), GARDEN_OUTPUT, COLONIST_FOOD,
-    'Build and wire another garden (each makes 2, and each colonist eats 0.3).')(s, w),
+  oxygen: (s, w) => stockReport('Oxygen', 'oxygen', 'oxygen plant', s.rooms.filter((r) => r.type === 'oxygen'), COLONIST_O2,
+    'Build and wire another oxygen plant, or upgrade one (each colonist breathes 0.5).')(s, w),
+  food: (s, w) => stockReport('Food', 'food', 'garden', s.rooms.filter((r) => r.type === 'garden'), COLONIST_FOOD,
+    'Build and wire another garden, or upgrade one (each colonist eats 0.3).')(s, w),
   materials: (s, w) => {
     const income = 1 + s.crew.length * MATERIAL_PER_COLONIST;
     const lines = [
@@ -272,7 +287,7 @@ const STATUS_REPORTS: Record<string, Report> = {
     const idle = quarters.filter((r) => !(r.powered && r.breathable));
     const lines = [
       ...graph('Colonists', w.map((x) => x.colonists), Math.max(...w.map((x) => x.colonists), 1)),
-      info(`  Beds      ${slots.length}  (hub ${HUB_CAPACITY} + ${quarters.length - idle.length} working quarters x ${QUARTERS_CAPACITY}), ${Math.max(free, 0)} free`),
+      info(`  Beds      ${slots.length}  (hub ${HUB_CAPACITY} + ${slots.length - HUB_CAPACITY} in ${quarters.length - idle.length} working quarters), ${Math.max(free, 0)} free`),
       (unhoused ? warn : info)(`  Housed    ${s.crew.length - unhoused} of ${s.crew.length}${unhoused ? `, ${unhoused} with no bunk` : ''}`),
     ];
     if (idle.length) lines.push(warn(`  ${plural(idle.length, 'quarters room')} not counted: needs both power and air. See "rooms".`));
@@ -313,7 +328,7 @@ export const COMMANDS: Record<string, Command> = {
       if (name && COMMANDS[name]) {
         const c = COMMANDS[name];
         const flagLines = Object.entries(c.flags ?? {}).map(([f, d]) => info(`    ${f.padEnd(10)} ${d}`));
-        return { lines: [info(`${c.usage}\n  ${c.summary}`), ...flagLines] };
+        return { lines: [info(`${c.usage}\n  ${c.summary}`), ...(c.details ? [info(`  ${c.details}`)] : []), ...flagLines] };
       }
       const w = Math.max(...Object.keys(COMMANDS).map((k) => k.length));
       return { lines: [info('Commands (Tab completes, ↑/↓ recalls history):'), ...Object.entries(COMMANDS).map(([k, c]) => info(`  ${k.padEnd(w)}  ${c.summary}`))] };
@@ -354,8 +369,9 @@ export const COMMANDS: Record<string, Command> = {
   },
   build: {
     tag: 'action',
-    usage: 'build [<category>] | build <type> -location <cell>   e.g. build reactor -location B4',
-    summary: `Construct a room. Types: ${BUILDABLE.join(', ')}. Give a category (${CATEGORY_ORDER.join(', ')}) instead of a type to list what it holds; "build" alone lists the categories.`,
+    usage: 'build <type> -location <cell>   e.g. build reactor -location B4',
+    summary: 'Construct a room. Try "build" alone.',
+    details: `Types: ${BUILDABLE.join(', ')}. Categories: ${CATEGORY_ORDER.join(', ')}. Give a category instead of a type to list the types in it.`,
     flags: { '-location': 'Cell to build on (alias -loc, -l).' },
     run: (s, a) => {
       const type = a.pos[0];
@@ -401,10 +417,11 @@ export const COMMANDS: Record<string, Command> = {
       if (from.type !== 'reactor') return err(`${at(from)} is not a reactor.`);
       if (!needsPower(to.type)) return err(`${at(to)} does not use wired power.`);
       const d = dist(from, to);
-      if (d > ROOM_DEFS.reactor.radius) return err(`Out of range: ${at(to)} is ${d.toFixed(1)} cells from the reactor, and its radius is ${ROOM_DEFS.reactor.radius}.`);
-      const load = reactorLoad(s, from.id) - (to.powerFrom === from.id && to.powered ? ROOM_DEFS[to.type].draw : 0);
-      const draw = ROOM_DEFS[to.type].draw;
-      if (load + draw > REACTOR_OUTPUT) return err(`Reactor at ${coord(from.x, from.y)} has ${REACTOR_OUTPUT - load} spare power, and ${ROOM_DEFS[to.type].label} needs ${draw}. Build another reactor.`);
+      const { radius, output } = statsOf(from);
+      if (d > radius) return err(`Out of range: ${at(to)} is ${d.toFixed(1)} cells from the reactor, and its radius is ${radius}.`);
+      const draw = statsOf(to).draw;
+      const load = reactorLoad(s, from.id) - (to.powerFrom === from.id && to.powered ? draw : 0);
+      if (load + draw > output) return err(`Reactor at ${coord(from.x, from.y)} has ${output - load} spare power, and ${ROOM_DEFS[to.type].label} needs ${draw}. Build another reactor.`);
       const rewired = to.powerFrom !== null && to.powerFrom !== from.id;
       to.powerFrom = from.id;
       recompute(s);
@@ -428,7 +445,7 @@ export const COMMANDS: Record<string, Command> = {
   pipe: {
     tag: 'action',
     usage: 'pipe -from <oxygen plant> -to <quarters>',
-    summary: `Pipe air from an oxygen plant to quarters within its radius (max ${OXYGEN_PIPES} per plant).`,
+    summary: `Pipe air from an oxygen plant to quarters within its radius (4 per plant, more once upgraded).`,
     flags: { '-from': 'Oxygen plant cell (alias -f).', '-to': 'Quarters cell (alias -t).' },
     run: (s, a) => {
       const from = roomFlag(s, a, '-from');
@@ -438,9 +455,10 @@ export const COMMANDS: Record<string, Command> = {
       if (from.type !== 'oxygen') return err(`${at(from)} is not an oxygen plant.`);
       if (to.type !== 'quarters') return err(`${at(to)} does not need piped air.`);
       const d = dist(from, to);
-      if (d > ROOM_DEFS.oxygen.radius) return err(`Out of range: ${at(to)} is ${d.toFixed(1)} cells away, and the plant's radius is ${ROOM_DEFS.oxygen.radius}.`);
+      const { radius, pipes } = statsOf(from);
+      if (d > radius) return err(`Out of range: ${at(to)} is ${d.toFixed(1)} cells away, and the plant's radius is ${radius}.`);
       const used = s.rooms.filter((r) => r.airFrom === from.id && r !== to).length;
-      if (used >= OXYGEN_PIPES) return err(`The plant at ${coord(from.x, from.y)} already feeds ${OXYGEN_PIPES} rooms. Build another oxygen plant.`);
+      if (used >= pipes) return err(`The plant at ${coord(from.x, from.y)} already feeds ${pipes} rooms. Build another oxygen plant.`);
       const rerouted = to.airFrom !== null && to.airFrom !== from.id;
       to.airFrom = from.id;
       recompute(s);
@@ -461,16 +479,62 @@ export const COMMANDS: Record<string, Command> = {
       return { lines: [ok(`Disconnected air to ${at(to)}.`)] };
     },
   },
+  upgrade: {
+    tag: 'action',
+    usage: 'upgrade | upgrade -location <cell>',
+    summary: 'List rooms that can be upgraded, or upgrade one from Mk1 to Mk2 in place.',
+    flags: { '-location': 'Room to upgrade (alias -loc, -l).' },
+    run: (s, a) => {
+      if (a.flags['-location'] === undefined && !a.bare.includes('-location')) {
+        const list = s.rooms.filter(canUpgrade);
+        if (!list.length) return { lines: [info('Nothing can be upgraded.')] };
+        const w = Math.max(...list.map((r) => ROOM_DEFS[r.type].label.length));
+        return {
+          lines: [
+            info(`Materials: ${Math.floor(s.materials)}. Upgrade with: upgrade -location <cell>`),
+            ...list.map((r) => {
+              const cost = UPGRADE_COST[r.type]!;
+              const short = cost > s.materials ? `   (need ${Math.ceil(cost - s.materials)} more)` : '';
+              return (short ? warn : info)(`  ${coord(r.x, r.y).padEnd(4)} ${ROOM_DEFS[r.type].label.padEnd(w)}  Mk1 -> Mk2   cost ${cost}   ${upgradeChanges(r.type)}${short}`);
+            }),
+          ],
+        };
+      }
+      const r = roomFlag(s, a, '-location');
+      if (isResult(r)) return r;
+      const label = ROOM_DEFS[r.type].label;
+      const here = coord(r.x, r.y);
+      if (r.type === 'hub') return err('The Command Hub cannot be upgraded.');
+      if (r.tier >= MAX_TIER) return err(`${label} at ${here} is already Mk${r.tier}. Mk3 is a separate building.`);
+      const cost = UPGRADE_COST[r.type];
+      if (cost === undefined) return err(`${label} at ${here} cannot be upgraded.`);
+      if (s.materials < cost) return err(`Not enough materials: upgrading ${label} costs ${cost}, you have ${Math.floor(s.materials)}.`);
+      // An upgrade that raises power draw must fit on the reactor, as wire requires.
+      const extra = statsAt(r.type, 2).draw - statsOf(r).draw;
+      const src = roomById(s, r.powerFrom);
+      if (extra > 0 && r.powered && src) {
+        const spare = statsOf(src).output - reactorLoad(s, src.id);
+        if (extra > spare) return err(`Reactor at ${coord(src.x, src.y)} has ${spare} spare power, and the upgrade needs ${extra} more. Build another reactor or upgrade this one.`);
+      }
+      s.materials -= cost;
+      r.tier = 2;
+      recompute(s);
+      const lines = [ok(`Upgraded ${label} at ${here} to Mk2 for ${cost}.`), info(`  ${upgradeChanges(r.type)}`)];
+      const problems = roomProblems(r);
+      if (problems.length) lines.push(warn(`Still not working (${problems.join(', ')}). Upgrading does not repair it; see "rooms".`));
+      return { lines, select: { x: r.x, y: r.y } };
+    },
+  },
   demolish: {
     tag: 'action',
     usage: 'demolish -location <cell>',
-    summary: 'Tear down a room for a 50% refund.',
+    summary: 'Tear down a room for a 50% refund of everything spent on it (build plus upgrade).',
     flags: { '-location': 'Cell to clear (alias -loc, -l).' },
     run: (s, a) => {
       const r = roomFlag(s, a, '-location');
       if (isResult(r)) return r;
       if (r.type === 'hub') return err('You cannot demolish the Command Hub.');
-      const refund = Math.floor(ROOM_DEFS[r.type].cost / 2);
+      const refund = refundFor(r);
       s.rooms = s.rooms.filter((x) => x !== r);
       s.materials += refund;
       recompute(s);
@@ -491,14 +555,21 @@ export const COMMANDS: Record<string, Command> = {
       const r = roomAt(s, p.x, p.y);
       if (!r) return { lines: [info(`${coord(p.x, p.y)}: empty space.`)], select: p, focus: null };
       const def = ROOM_DEFS[r.type];
-      const lines = [info(`${def.label} at ${coord(r.x, r.y)}  (#${r.id})`), info(`  ${def.desc}`)];
-      if (def.radius) lines.push(info(`  Radius: ${def.radius}`));
+      const st = statsOf(r);
+      const lines = [info(`${nameOf(r)} at ${coord(r.x, r.y)}  (#${r.id})`), info(`  ${def.desc}`)];
+      if (st.radius) lines.push(info(`  Radius: ${st.radius}`));
       if (r.type === 'reactor') {
         const served = s.rooms.filter((x) => x.powerFrom === r.id);
-        lines.push(info(`  Load: ${reactorLoad(s, r.id)} / ${REACTOR_OUTPUT}, wired to ${served.length} room(s)`));
+        lines.push(info(`  Output: ${st.output}`), info(`  Load: ${reactorLoad(s, r.id)} / ${st.output}, wired to ${served.length} room(s)`));
       } else if (r.type === 'oxygen') {
-        lines.push(info(`  Pipes: ${plantPipes(s, r.id)} / ${OXYGEN_PIPES} in use`));
+        lines.push(info(`  Output: ${st.output} oxygen/tick`), info(`  Pipes: ${plantPipes(s, r.id)} / ${st.pipes} in use`));
+      } else if (r.type === 'garden') {
+        lines.push(info(`  Output: ${st.output} food/tick`));
+      } else if (r.type === 'quarters') {
+        lines.push(info(`  Beds: ${st.beds}`));
       }
+      if (needsPower(r.type)) lines.push(info(`  Power draw: ${st.draw}`));
+      if (canUpgrade(r)) lines.push(info(`  Upgrade: Mk2 for ${UPGRADE_COST[r.type]} (${upgradeChanges(r.type)})`));
       if (needsPower(r.type)) {
         const src = roomById(s, r.powerFrom);
         lines.push(r.powerFrom === null ? warn('  Power: NOT WIRED') : r.powered ? info(`  Power: online (reactor at ${coord(src!.x, src!.y)})`) : warn('  Power: wired, but no supply (out of range or reactor overloaded)'));
@@ -508,7 +579,7 @@ export const COMMANDS: Record<string, Command> = {
         lines.push(r.airFrom === null ? warn('  Air: NOT PIPED') : r.breathable ? info(`  Air: flowing (plant at ${coord(src!.x, src!.y)})`) : warn('  Air: piped, but no supply (plant unpowered, out of range, or full)'));
         lines.push(info(`  Lounges in range: ${r.loungeCount}`));
       }
-      return { lines, select: p, focus: p };
+      return { lines, select: p, focus: p, view: { highlight: null } };
     },
   },
   rooms: {
@@ -518,7 +589,7 @@ export const COMMANDS: Record<string, Command> = {
     run: (s) => ({
       lines: s.rooms.map((r) => {
         const flags = roomProblems(r);
-        const l = `  ${coord(r.x, r.y).padEnd(4)} ${ROOM_DEFS[r.type].label}${flags.length ? '  [' + flags.join(', ') + ']' : ''}`;
+        const l = `  ${coord(r.x, r.y).padEnd(4)} ${nameOf(r)}${flags.length ? '  [' + flags.join(', ') + ']' : ''}`;
         return flags.length ? warn(l) : { kind: 'info', text: `${l}  `, tag: { text: '[OPERATIONAL]', kind: 'ok' } };
       }),
     }),
@@ -550,7 +621,7 @@ export const COMMANDS: Record<string, Command> = {
     usage: 'view zoom <in|out> [steps] | view pan <up|down|left|right> [cells] | view <room type or category> | view reset',
     summary: 'Zoom, pan, or highlight the map by room type or category. "reset" restores the full view and clears any highlight.',
     run: (s, { pos: [sub, a, b] }) => {
-      if (sub === 'reset') return { lines: [ok('View reset.')], view: { reset: true, highlight: null } };
+      if (sub === 'reset') return { lines: [ok('View reset.')], view: { reset: true, highlight: null }, focus: null };
 
       if (sub === 'zoom') {
         if (a !== 'in' && a !== 'out') return err('Usage: view zoom <in|out> [steps]');
@@ -573,17 +644,17 @@ export const COMMANDS: Record<string, Command> = {
         const type = ROOM_TYPES.find((t) => t === sub || t + 's' === sub);
         if (type) {
           const found = s.rooms.filter((r) => r.type === type);
-          if (!found.length) return { lines: [warn(`No ${ROOM_DEFS[type].label} built.`)], view: { highlight: null } };
+          if (!found.length) return { lines: [warn(`No ${ROOM_DEFS[type].label} built.`)], view: { highlight: null }, focus: null };
           const cells = found.map((r) => coord(r.x, r.y)).join(', ');
-          return { lines: [ok(`Highlighting ${found.length} ${ROOM_DEFS[type].label}: ${cells}. "view reset" clears it.`)], view: { highlight: [type] } };
+          return { lines: [ok(`Highlighting ${found.length} ${ROOM_DEFS[type].label}: ${cells}. "view reset" clears it.`)], view: { highlight: [type] }, focus: null };
         }
         // "view habitat": light up every room in that category.
         if (isCategory(sub)) {
           const types = ROOM_TYPES.filter((t) => ROOM_DEFS[t].category === sub);
           const found = s.rooms.filter((r) => types.includes(r.type));
-          if (!found.length) return { lines: [warn(`No ${CATEGORY_LABELS[sub]} rooms built.`)], view: { highlight: null } };
+          if (!found.length) return { lines: [warn(`No ${CATEGORY_LABELS[sub]} rooms built.`)], view: { highlight: null }, focus: null };
           const cells = found.map((r) => coord(r.x, r.y)).join(', ');
-          return { lines: [ok(`Highlighting ${found.length} ${CATEGORY_LABELS[sub]} room${found.length === 1 ? '' : 's'}: ${cells}. "view reset" clears it.`)], view: { highlight: types } };
+          return { lines: [ok(`Highlighting ${found.length} ${CATEGORY_LABELS[sub]} room${found.length === 1 ? '' : 's'}: ${cells}. "view reset" clears it.`)], view: { highlight: types }, focus: null };
         }
         return err(`Unknown view option "${sub}". Try: zoom, pan, reset, a room type (${ROOM_TYPES.join(', ')}) or a category (${categoryNames()}).`);
       }
@@ -637,9 +708,9 @@ export function linkPreview(s: State, input: string): { kind: 'wire' | 'pipe'; f
   const from = roomAt(s, fp.x, fp.y);
   const to = roomAt(s, tp.x, tp.y);
   if (!from || !to) return null;
-  const [srcType, radius] = name === 'wire' ? (['reactor', ROOM_DEFS.reactor.radius] as const) : (['oxygen', ROOM_DEFS.oxygen.radius] as const);
+  const srcType = name === 'wire' ? 'reactor' : 'oxygen';
   const dstOk = name === 'wire' ? needsPower(to.type) : to.type === 'quarters';
-  return { kind: name, from: fp, to: tp, valid: from.type === srcType && dstOk && dist(from, to) <= radius };
+  return { kind: name, from: fp, to: tp, valid: from.type === srcType && dstOk && dist(from, to) <= statsOf(from).radius };
 }
 
 /** Cells of rooms that make sense as the value of a given flag, for completion. */
@@ -650,6 +721,7 @@ function cellsFor(s: State, cmd: string, flag: string): string[] {
     if (cmd === 'pipe') return r.type === 'quarters';
     if (cmd === 'unwire') return r.powerFrom !== null;
     if (cmd === 'unpipe') return r.airFrom !== null;
+    if (cmd === 'upgrade') return canUpgrade(r);
     return cmd === 'demolish' ? r.type !== 'hub' : true;
   });
   return rooms.map((r) => coord(r.x, r.y).toLowerCase());
@@ -688,7 +760,7 @@ export function suggest(s: State, input: string): { completions: string[]; parti
     hint = `${flagContext} expects a cell like B4. ${options.length ? 'Valid: ' + options.join(' ') : ''}`;
   } else if (name === 'build' && tokens.length === 1) {
     options = [...activeCategories(), ...BUILDABLE];
-    hint = `Categories: ${categoryNames()}.  Types: ${BUILDABLE.map((t) => `${t}(${ROOM_DEFS[t].cost})`).join('  ')}`;
+    hint = BUILDABLE.map((t) => `${t}(${ROOM_DEFS[t].cost})`).join('  ');
   } else if (COMMANDS[name]?.flags) {
     options = Object.keys(COMMANDS[name].flags!).filter((f) => !usedFlags.has(f));
     if (name === 'inspect' && tokens.length === 1) options.push('reset');

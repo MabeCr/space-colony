@@ -31,7 +31,7 @@ A real-time colony survival sim played mostly through a **command line**. The pl
 
 ## Tech
 
-- TypeScript + Vite, no framework. Run with `npm install`, `npm run dev`. `npm run typecheck` runs `tsc --noEmit`.
+- TypeScript + Vite, no framework. Run with `npm install`, `npm run dev`. `npm run typecheck` runs `tsc --noEmit`. `npm run smoke` runs `scripts/smoke.ts`, headless checks of commands and the simulation (no browser).
 - Canvas for the map, plain DOM for the HUD and terminal.
 - Files in `src/`:
   - `sim.ts` — game state, room definitions, tick simulation (no DOM).
@@ -86,7 +86,8 @@ Flags can be abbreviated: `-loc`/`-l` for `-location`, `-f`/`-src` for `-from`, 
 - `build <type> -location <cell>` — spend materials to build. Warns if the new room still needs wiring or piping.
 - `wire -from <reactor> -to <room>` / `unwire -to <room>` — power lines.
 - `pipe -from <oxygen plant> -to <quarters>` / `unpipe -to <quarters>` — air pipes.
-- `demolish -location <cell>` — 50% refund. The hub cannot be demolished.
+- `upgrade` / `upgrade -location <cell>` — list upgradable rooms, or upgrade one from Mk1 to Mk2 in place (cost and Mk2 stats in API.md, Tiers). A broken room can be upgraded but stays broken; an upgrade that raises power draw is refused if the reactor lacks spare power. **Implemented (Slice 2).**
+- `demolish -location <cell>` — refunds 50% of everything spent on the room (build plus upgrade). The hub cannot be demolished.
 - `inspect -location <cell>` — details for a room (load, pipes, power/air state, nearby lounges) and its radius on the map. Also highlights its connections (below).
 - `inspect reset` — clears the connection highlight.
 - `rooms` — list every room with problem flags (NOT WIRED, NO POWER, NOT PIPED, NO AIR); working rooms get a green `[OPERATIONAL]` tag. This uses an optional `tag` (coloured suffix) on `LogLine`, which `main.ts` renders as a span.
@@ -110,7 +111,7 @@ Note: `status` is the colony-wide overview. `inspect` is the per-structure statu
 
 ### Connection highlight
 
-After `inspect` on a room, that room, its wires and pipes (in and out), and the rooms on the far ends stay lit. Everything else dims to about 22% opacity but stays visible. The highlight stays until another `inspect`, `inspect reset`, inspecting empty space, or `demolish`. Other commands leave it alone. The dim level is the `DIM` constant in `render.ts`.
+After `inspect` on a room, that room, its wires and pipes (in and out), and the rooms on the far ends stay lit. Everything else dims to about 22% opacity but stays visible. The highlight stays until another `inspect`, `inspect reset`, inspecting empty space, or `demolish`. A `view` highlight (room type or category) also clears it, and `inspect` on a room clears any `view` highlight: the newest of the two wins (decided 2026-10-20). Other commands leave it alone. The dim level is the `DIM` constant in `render.ts`.
 
 ### Keyboard map cursor and autofill
 
@@ -135,7 +136,7 @@ Decision: clicking a cell only targets it, exactly as if the cursor had been mov
   - `view zoom <in|out> [steps]` zooms about the centre of the panel; each step is 1.25x, default 1, max 10.
   - `view pan <up|down|left|right> [cells]` moves the camera, so `left` shows what is to the left. Default 2 cells, max 50. Cells scale with the zoom.
   - `view reset` restores the fit-everything view and clears any highlight.
-  - `view <room type>` (also the plural, e.g. `view gardens`) lights up every room of that type and dims the other rooms and links, then lists the cells. Types: hub, reactor, oxygen, garden, quarters, lounge. Nothing built of that type clears it with a warning. The highlight stays until `view reset`. `inspect` focus takes precedence while it is active.
+  - `view <room type>` (also the plural, e.g. `view gardens`) lights up every room of that type and dims the other rooms and links, then lists the cells. Types: hub, reactor, oxygen, garden, quarters, lounge. Nothing built of that type clears it with a warning. The highlight stays until `view reset`, another `view`, or an `inspect` on a room (the newest command wins; each clears the other). `view reset` also clears an `inspect` focus.
   - Commands report camera and highlight changes through a `view` field on `CommandResult` (`ViewAction` in `commands.ts`); `main.ts` applies it to the renderer.
 - Wires are amber, pipes are cyan. Working links animate as moving dashes; broken ones are dotted red.
 - Rooms with missing power or air pulse red and show a bolt or droplet badge.
@@ -179,7 +180,8 @@ Agreed in design discussion on 2026-10-19. Nothing here is built. Implementation
 - **Mk1:** built normally.
 - **Mk2:** an in-place upgrade (`upgrade -location <cell>`), so the player can keep their opening base design.
 - **Mk3:** a new building, with a larger boost, that must be integrated into the colony. It needs a new link type that the category's Mk1 and Mk2 never used. Integration should be a layout puzzle and a placement test, not just a bigger number.
-- **Proposed:** Mk3 buildings take a larger footprint (2x2), so a player who leaves spare room in their layout is rewarded. Whether Mk3 consumes or replaces the Mk2 (with a bonus refund) is **Open**. The starting grid is small (16 by 10), but the colony will grow onto a larger revealed map (see "Map expansion and survey"), so 2x2 footprints should be workable once the player has surveyed more room.
+- **Decided 2026-10-20: Mk3 is 1x1, and must be built next to a Mk2.** A Mk3 must sit next to a Mk2 room of its own category *(placeholder: any of the 8 surrounding cells, any Mk2 in the category)*. The Mk2 stays (an add-on, not a replacement), and it is a standing requirement: the Mk3 only works while an operational Mk2 of its category is next to it. If that Mk2 is demolished or stops working, the Mk3 stops until it is restored (or another Mk2 is next to it). One Mk2 may host several Mk3 rooms for now. This keeps the layout puzzle (the player has to plan where the Mk2 sits and leave room beside it) without changing how the grid works. Multi-cell footprints (2x2) were **parked**: they are the riskiest change to the grid and exist only for Mk3, and the larger map makes spare space less scarce, so the reward would be weak. They can return later if Mk3 needs more weight. See [`docs/specs/06-multi-cell-footprints.md`](specs/06-multi-cell-footprints.md).
+- **Decided 2026-10-20 (Slice 2):** `demolish` refunds half of everything spent on a room (build plus upgrade). The tier shows on the map as a second, inner border; staff pips (Slice 10) are reserved for staffing.
 
 **Link types (Decided: more are needed; the set is Proposed).** Each new link has a natural home and its own verb and un-verb, like `wire`/`unwire` and `pipe`/`unpipe`:
 
@@ -200,7 +202,7 @@ Early tiers should need at most one new link type each, so typing load stays low
 
 | Category | Mk1 | Mk2 | Mk3 | New link at Mk3 |
 |---|---|---|---|---|
-| Power | Reactor | Higher output and radius | Fusion core (2x2) | Coolant |
+| Power | Reactor | Higher output and radius | Fusion core | Coolant |
 | Life support | Oxygen plant | More pipe slots | Atmosphere processor | Coolant |
 | Food | Hydroponics | Higher yield | Bio-dome | Cargo |
 | Habitation | Quarters, lounge | More beds, bigger boost | Habitat ring | Data |
@@ -234,7 +236,7 @@ Early tiers should need at most one new link type each, so typing load stays low
 - **Scope decision (Decided).** The fork roughly doubles the Mk3 content to balance, and the win paths are not built (Conquest is explicitly still open). So the extra Mk1 variants come first, since they enrich the early game, and the Mk3 fork is **held** until the win paths are specced. The Mk3 rooms in the specs (fusion core, data core) are the Ascension-flavour default and must not block adding a Conquest sibling later.
 - The fork needs research to support exclusive techs (a tech that excludes another). See the Research spec.
 
-**Build order for this work (Decided).** Compute first (it enables research and automation and introduces the data link), then the larger map and `survey` (it gives deposits and later the rival colony somewhere to be), then Industry (it gives expansion a reason and introduces the cargo link), then Defense (with Slice 2 and the first wave type; it wants coolant and cargo to exist). The ordered slices, with a footprint slice before the Mk3 buildings, are in [`docs/specs/`](specs/README.md). The crew slices (staffing, then the academy) come after tiers and research, since staffing is a Mk2 bonus and training reuses the research reservation mechanism.
+**Build order for this work (Decided).** Compute first (it enables research and automation and introduces the data link), then the larger map and `survey` (it gives deposits and later the rival colony somewhere to be), then Industry (it gives expansion a reason and introduces the cargo link), then Defense (with Slice 2 and the first wave type; it wants coolant and cargo to exist). The ordered slices, are in [`docs/specs/`](specs/README.md). The crew slices (staffing, then the academy) come after tiers and research, since staffing is a Mk2 bonus and training reuses the research reservation mechanism.
 
 ### Map expansion and survey
 
@@ -422,7 +424,7 @@ Text-only play risks fatigue, so small ASCII or GUI visualisations (maps, bars) 
 ### Suggested build order
 
 1. **Slice 1 (done):** layout, ticks, radius rules, basic commands, one economy, explicit wire/pipe, population growth.
-2. **Structures track (planned):** categories, tiers and `upgrade`, compute capacity, the data link and network switch, `research`, multi-cell footprints, Mk3 buildings and the coolant link, the larger map and `survey`, then industry and the cargo link, then crew staffing and the academy. See [`docs/specs/`](specs/README.md). This runs alongside the slices below; the Defense category lands with Slice 2.
+2. **Structures track (planned):** categories, tiers and `upgrade`, compute capacity, the data link and network switch, `research`, Mk3 buildings and the coolant link, the larger map and `survey`, then industry and the cargo link, then crew staffing and the academy. See [`docs/specs/`](specs/README.md). This runs alongside the slices below; the Defense category lands with Slice 2.
 3. **Slice 2:** one wave type, turrets, simple scripts. The first scripting step (record and run) is specced in [`docs/specs/12-scripting-record-and-run.md`](specs/12-scripting-record-and-run.md); the language and query design behind later steps is still open.
 4. **Slice 3:** happiness consequences, corruption.
 5. **Later:** enemy factions, win paths, meta-progression.

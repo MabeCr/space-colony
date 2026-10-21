@@ -8,10 +8,11 @@ Reference for every command that can be typed into the shell at the bottom of th
 2. [Cells](#cells)
 3. [Flag aliases](#flag-aliases)
 4. [Room types](#room-types)
-5. [Command index](#command-index)
-6. [Commands](#commands)
-7. [Shell keyboard features](#shell-keyboard-features)
-8. [Quick recipes](#quick-recipes)
+5. [Tiers](#tiers)
+6. [Command index](#command-index)
+7. [Commands](#commands)
+8. [Shell keyboard features](#shell-keyboard-features)
+9. [Quick recipes](#quick-recipes)
 
 ---
 
@@ -74,10 +75,25 @@ Valid values for `build <type>`. The Command Hub (`hub`) exists from the start a
 
 Other limits used by the commands:
 
-- A reactor supplies **12** power total.
-- An oxygen plant feeds at most **4** quarters.
+- A Mk1 reactor supplies **12** power total (Mk2: 18). A Mk1 oxygen plant feeds at most **4** quarters (Mk2: 6). See [Tiers](#tiers).
 - Distances are straight-line (Euclidean) between cell centres, e.g. `h6` to `j7` is about 2.2.
-- `demolish` refunds half the build cost, rounded down.
+- `demolish` refunds half of everything spent on the room (build plus upgrade), rounded down.
+
+---
+
+## Tiers
+
+Every buildable room starts at **Mk1** and can be upgraded in place to **Mk2** with [`upgrade`](#upgrade). The room keeps its cell, wires and pipes. Mk2 stats *(placeholder numbers)*:
+
+| Type | Upgrade cost | Mk1 | Mk2 |
+|---|---|---|---|
+| `reactor` | 25 | output 12, radius 4 | output 18, radius 5 |
+| `oxygen` | 20 | output 3, 4 pipes, draw 3 | output 4, 6 pipes, draw 4 |
+| `garden` | 15 | output 2, draw 2 | output 3, draw 3 |
+| `quarters` | 12 | 2 beds | 3 beds |
+| `lounge` | 18 | radius 3 | radius 4 |
+
+The hub cannot be upgraded. Mk3 is a separate building, not an upgrade (not built yet). Mk2 rooms show as `Reactor Mk2` in `rooms`, `inspect`, messages and the map hover label, and have a second, inner border on the map.
 
 ---
 
@@ -92,7 +108,8 @@ Other limits used by the commands:
 | [`unwire`](#unwire) | `unwire -to <room>` | Cut the power line to a room. |
 | [`pipe`](#pipe) | `pipe -from <oxygen plant> -to <quarters>` | Pipe air from an oxygen plant to quarters. |
 | [`unpipe`](#unpipe) | `unpipe -to <quarters>` | Cut the air pipe to quarters. |
-| [`demolish`](#demolish) | `demolish -location <cell>` | Tear down a room for a 50% refund. |
+| [`upgrade`](#upgrade) | `upgrade`, `upgrade -location <cell>` | List upgradable rooms, or upgrade one from Mk1 to Mk2. |
+| [`demolish`](#demolish) | `demolish -location <cell>` | Tear down a room for a 50% refund of everything spent on it. |
 | [`inspect`](#inspect) | `inspect -location <cell>` / `inspect reset` | Room details and map highlight. |
 | [`rooms`](#rooms) | `rooms` | List every room and whether it is working. |
 | [`crew`](#crew) | `crew` | List colonists and who has a bunk. |
@@ -350,6 +367,35 @@ unpipe -to k7
 
 ---
 
+### upgrade
+
+```
+upgrade
+upgrade -location <cell>
+```
+
+| Parameter | Form | Aliases | Required | Description |
+|---|---|---|---|---|
+| `-location <cell>` | flag | `-loc`, `-l` | no | Room to upgrade. Without it, `upgrade` lists what can be upgraded. |
+
+Behaviour:
+
+- **Without a flag**, lists every Mk1 room that can be upgraded: cell, label, cost and the stat changes (`output 12 -> 18, radius 4 -> 5`). Rooms you cannot yet afford are shown as warnings with how much more is needed.
+- **With `-location`**, spends the cost and upgrades the room to Mk2 in place. Wires and pipes are kept, stats change immediately, and the map cursor moves to the room.
+- A **broken room can be upgraded**, but it stays broken: a warning lists what is still wrong (for example `NOT WIRED`).
+- An upgrade that **raises power draw** (oxygen plant, hydroponics) is refused if the room is currently powered and its reactor lacks the spare power. Upgrade the reactor or build another one first.
+- Upgrading a reactor raises its output and radius; links that were out of range may start working.
+
+Errors: `Missing -location <cell>.`, invalid cell, `Nothing is built at <cell>.`, `The Command Hub cannot be upgraded.`, `<Room> at <cell> is already Mk2. Mk3 is a separate building.`, `Not enough materials: upgrading <label> costs <cost>, you have <n>.`, and `Reactor at <cell> has <n> spare power, and the upgrade needs <m> more. Build another reactor or upgrade this one.`
+
+```
+upgrade
+upgrade -location h6
+upgrade -l j6
+```
+
+---
+
 ### demolish
 
 ```
@@ -362,13 +408,13 @@ demolish -location <cell>
 
 Behaviour:
 
-- Removes the room and refunds **50%** of its build cost (rounded down).
+- Removes the room and refunds **50%** of everything spent on it, build cost plus upgrade cost, rounded down.
 - Clears the map selection and connection highlight.
 - Any wires or pipes that pointed at a demolished reactor or oxygen plant are dropped the next time the simulation recomputes (the rooms they fed simply lose supply).
 
 Errors: `Missing -location <cell>.`, invalid cell, `Nothing is built at <cell>.`, or `You cannot demolish the Command Hub.`
 
-Refunds: reactor 20, oxygen plant 15, hydroponics 12, quarters 10, lounge 15.
+Refunds at Mk1: reactor 20, oxygen plant 15, hydroponics 12, quarters 10, lounge 15. At Mk2 they are half of build plus upgrade: reactor 32, oxygen plant 25, hydroponics 20, quarters 16, lounge 24.
 
 ```
 demolish -location e6
@@ -394,14 +440,16 @@ inspect reset
 Behaviour:
 
 - **On a room**, prints its label, cell and id, its description, and, where relevant:
-  - Radius (reactor, oxygen plant, lounge)
-  - Reactor: load (`used / 12`) and number of rooms wired to it
-  - Oxygen plant: pipes in use (`n / 4`)
+  - The tier in the name (`Reactor Mk2`) and, for Mk1 rooms, what the upgrade costs and changes
+  - Radius (reactor, oxygen plant, lounge), at the room's current tier
+  - Reactor: output, load (`used / output`) and number of rooms wired to it
+  - Oxygen plant: output and pipes in use (`n / limit`); hydroponics: food output; quarters: beds
+  - Power draw, for rooms that use power
   - Power-using rooms: `NOT WIRED`, online (and from which reactor), or wired but unsupplied (out of range or reactor overloaded)
   - Quarters: air status (`NOT PIPED`, flowing, or piped but unsupplied) and number of lounges in range
 - **On an empty cell**, prints `<cell>: empty space.` and clears the highlight.
 - Moves the map cursor to the cell and **highlights the room's connections**: its wires and pipes (in and out) and the rooms at the far ends stay lit while the rest of the map dims.
-- The highlight persists until you run another `inspect`, `inspect reset`, inspect an empty cell, or `demolish`.
+- The highlight persists until you run another `inspect`, `inspect reset`, inspect an empty cell, `demolish`, or a `view` that highlights (`view <room type>`, `view <category>`, `view reset`). Inspecting a room also clears any `view` highlight: the newest command wins.
 - `inspect reset` prints `Map highlight cleared.`
 
 Errors: if no valid cell is given, `Usage: inspect -location <cell>   e.g. inspect -location B4` (or the invalid-cell message).
@@ -481,9 +529,9 @@ Controls the map camera and highlight. None of it affects the simulation. Has no
 |---|---|---|
 | `view zoom in` / `view zoom out` | `steps`: optional positive number, default `1`, max `10` | Zooms about the centre of the map panel. Each step is 1.25x. Zoom is limited to 0.5x-4x of the fit-everything size. |
 | `view pan <direction>` | `direction`: `up`, `down`, `left` or `right`. `cells`: optional positive number, default `2`, max `50` | Moves the camera, so `left` shows what lies to the left. Distance is in cells at the current zoom. The map cannot be panned fully off screen. |
-| `view <room type>` | `hub`, `reactor`, `oxygen`, `garden`, `quarters` or `lounge`; plurals such as `gardens` also work | Lights up every room of that type, dims the other rooms and the links, and lists the matching cells. If none are built it prints a warning and clears any highlight. `inspect` focus takes precedence while active. |
+| `view <room type>` | `hub`, `reactor`, `oxygen`, `garden`, `quarters` or `lounge`; plurals such as `gardens` also work | Lights up every room of that type, dims the other rooms and the links, and lists the matching cells. If none are built it prints a warning and clears any highlight. It also clears an `inspect` focus (the newest command wins). |
 | `view <category>` | `power`, `life`, `food`, `habitat` (and later categories once they hold rooms) | Same as `view <room type>`, but for every room in the category. Prints a warning and clears the highlight if none are built. |
-| `view reset` | none | Restores the fit-everything view and clears the highlight. |
+| `view reset` | none | Restores the fit-everything view and clears any highlight, including an `inspect` focus. |
 
 Errors: `Usage: view zoom <in|out> [steps]`, `Usage: view pan <up|down|left|right> [cells]`, `Steps must be a number from above 0 to 10.`, `Cells must be a number from above 0 to 50.`, `Unknown view option "<text>". ...`
 
@@ -529,6 +577,7 @@ While typing, a hint line shows the usage for the current command, and a `⇧↵
 | `wire ...` or `pipe ...` | First fill sets `-from c`; the next sets `-to c`; after both exist it replaces `-to`. |
 | `unwire ...` or `unpipe ...` | Sets `-to c`. |
 | `demolish ...` | Becomes `demolish -location c`. |
+| `upgrade ...` | Becomes `upgrade -location c`. |
 | empty line, or `inspect ...` | Becomes `inspect -location c`. |
 | anything else (`speed`, `help`, `status`, ...) | Left unchanged. |
 

@@ -58,7 +58,7 @@ Empty categories are hidden until they contain something. (Open: show them greye
 
 **Name resolution for the first positional argument of `build`:** if it matches a room type, it is a type. Otherwise if it matches a category, it lists that category. Otherwise print the existing `Unknown room type` error and also list the category names.
 
-**`view <category>`** lights up every room in the category and dims everything else, exactly as `view <room type>` does. It lists the matching cells. If nothing of that category is built, print the same warning and clear the highlight as `view <room type>` does. `view reset` clears it. `inspect` focus keeps precedence.
+**`view <category>`** lights up every room in the category and dims everything else, exactly as `view <room type>` does. It lists the matching cells. If nothing of that category is built, print the same warning and clear the highlight as `view <room type>` does. `view reset` clears it. The newest of `view` and `inspect` wins: each clears the other (changed 2026-10-20 from "inspect keeps precedence").
 
 **`help build`** mentions that a category can be given. `help` groups the command list as it does now; the grouping applies to room types where room types are listed.
 
@@ -80,7 +80,7 @@ Categories will end up holding two or three Mk1 types each (DESIGN.md, "Variety 
 8. Build a second quarters, then type `view habitat`. Quarters and lounge (if built) light up; everything else, including links, dims. The cells are listed.
 9. Type `view life`. The oxygen plant lights up. Type `view defense` (nothing built): you get the warning and the highlight clears.
 10. Type `view reset`. The highlight clears.
-11. Type `inspect h6`, then `view habitat`. The inspect focus keeps precedence until you clear it.
+11. Type `inspect h6`, then `view habitat`. The category lights up and the inspect focus is gone (the newest command wins). Then `inspect h6` again: the category highlight is replaced by the inspect focus.
 12. Run `npm run typecheck`. It passes.
 
 ## Open questions

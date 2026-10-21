@@ -193,6 +193,7 @@ function filledLine(c: { x: number; y: number }): string {
   }
   if (verb === 'unwire' || verb === 'unpipe') return [...without('-to'), '-to', cell].join(' ');
   if (verb === 'demolish') return `demolish -location ${cell}`;
+  if (verb === 'upgrade') return `upgrade -location ${cell}`;
   if (!verb || verb === 'inspect') return `inspect -location ${cell}`;
   return input.value.trim().toLowerCase();
 }
